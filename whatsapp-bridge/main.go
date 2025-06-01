@@ -77,7 +77,7 @@ func main() {
 		contacts: make([]Contact, 0),
 	}
 
-	// Cargar configuración
+	// Load configuration
 	if err := bridge.loadConfig(); err != nil {
 		log.Fatal("Error cargando configuración:", err)
 	}
@@ -85,15 +85,15 @@ func main() {
 	// Configurar logging
 	bridge.setupLogging()
 
-	// Inicializar WhatsApp REAL
+	// Initialize REAL WhatsApp
 	if err := bridge.initWhatsApp(); err != nil {
 		bridge.logger.Fatal("Error inicializando WhatsApp:", err)
 	}
 
-	// Configurar rutas HTTP
+	// Configure HTTP routes
 	router := bridge.setupRoutes()
 
-	// Iniciar servidor HTTP
+	// Start HTTP server
 	server := &http.Server{
 		Addr:    ":" + bridge.config.BridgePort,
 		Handler: router,
@@ -107,19 +107,19 @@ func main() {
 		}
 	}()
 
-	// Esperar señal de cierre
+	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	bridge.logger.Info("Cerrando WhatsApp Bridge...")
 
-	// Cerrar cliente de WhatsApp
+	// Close WhatsApp client
 	if bridge.client != nil {
 		bridge.client.Disconnect()
 	}
 
-	// Cerrar servidor HTTP
+	// Close HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
@@ -130,7 +130,7 @@ func main() {
 }
 
 func (b *WhatsAppBridge) loadConfig() error {
-	// Cargar archivo .env
+	// Load .env file
 	if err := godotenv.Load("../.env"); err != nil {
 		b.logger.Warn("No se pudo cargar archivo .env, usando variables de entorno")
 	}
@@ -158,51 +158,51 @@ func (b *WhatsAppBridge) setupLogging() {
 	}
 	b.logger.SetLevel(level)
 
-	// Crear directorio de logs si no existe
+	// Create logs directory if it doesn't exist
 	if err := os.MkdirAll(b.config.LogPath, 0750); err != nil {
 		b.logger.Error("Error creando directorio de logs:", err)
 	}
 
-	// Configurar formato de logs
+	// Configure log format
 	b.logger.SetFormatter(&logrus.JSONFormatter{
 		TimestampFormat: time.RFC3339,
 	})
 }
 
 func (b *WhatsAppBridge) initWhatsApp() error {
-	// Crear directorio de autenticación
+	// Create authentication directory
 	authDir := "../auth"
 	if err := os.MkdirAll(authDir, 0700); err != nil {
 		return fmt.Errorf("error creando directorio de auth: %v", err)
 	}
 
-	// Configurar store de WhatsApp con SQLite persistente
+	// Configure WhatsApp store with persistent SQLite
 	dbLog := waLog.Stdout("Database", "INFO", true)
 	container, err := sqlstore.New(context.Background(), "sqlite3", "file:"+authDir+"/whatsapp.db?_foreign_keys=on", dbLog)
 	if err != nil {
 		return fmt.Errorf("error creando container de WhatsApp: %v", err)
 	}
 
-	// Obtener device store
+	// Get device store
 	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil {
 		return fmt.Errorf("error obteniendo device store: %v", err)
 	}
 
-	// Configurar logging de WhatsApp
+	// Configure WhatsApp logging
 	clientLog := waLog.Stdout("Client", "INFO", true)
 
-	// Crear cliente
+	// Create client
 	b.client = whatsmeow.NewClient(deviceStore, clientLog)
 
-	// Configurar event handlers
+	// Configure event handlers
 	b.client.AddEventHandler(b.handleMessage)
 	b.client.AddEventHandler(b.handleReceipt)
 	b.client.AddEventHandler(b.handleConnected)
 
-	// Conectar
+	// Connect
 	if b.client.Store.ID == nil {
-		// Primera vez - mostrar QR
+		// First time - show QR
 		b.logger.Info("🔄 Primera vez conectando - generando código QR...")
 		qrChan, _ := b.client.GetQRChannel(context.Background())
 		err = b.client.Connect()
@@ -215,7 +215,7 @@ func (b *WhatsAppBridge) initWhatsApp() error {
 		fmt.Println(strings.Repeat("=", 60))
 		for evt := range qrChan {
 			if evt.Event == "code" {
-				// Mostrar QR visual en la terminal
+				// Show QR code in terminal
 				fmt.Println("\n🔳 Código QR:")
 				qrterminal.Generate(evt.Code, qrterminal.L, os.Stdout)
 				fmt.Println("\n👆 Escanea este código QR con WhatsApp en tu teléfono")
@@ -230,7 +230,7 @@ func (b *WhatsAppBridge) initWhatsApp() error {
 			}
 		}
 	} else {
-		// Reconectar
+		// Reconnect
 		err = b.client.Connect()
 		if err != nil {
 			return fmt.Errorf("error reconectando a WhatsApp: %v", err)
@@ -240,18 +240,18 @@ func (b *WhatsAppBridge) initWhatsApp() error {
 
 	b.logger.Info("✅ WhatsApp conectado correctamente")
 	
-	// Iniciar sincronización de contactos
+	// Start contact synchronization
 	go b.syncContacts()
 	
 	return nil
 }
 
-// Funciones para almacenamiento en memoria
+// In-memory storage functions
 func (b *WhatsAppBridge) saveMessage(v *events.Message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// Extraer contenido del mensaje
+	// Extract message content
 	var content string
 	var messageType string = "text"
 	
@@ -276,7 +276,7 @@ func (b *WhatsAppBridge) saveMessage(v *events.Message) error {
 		messageType = "unknown"
 	}
 
-	// Guardar en memoria
+	// Save to memory
 	msg := Message{
 		ID:          v.Info.ID,
 		ChatJID:     v.Info.Chat.String(),
@@ -300,31 +300,31 @@ func min(a, b int) int {
 }
 
 
-// Event handler para la conexión exitosa
+// Event handler for successful connection
 func (b *WhatsAppBridge) handleConnected(evt interface{}) {
 	b.logger.Info("🔗 WhatsApp conectado - sincronizando contactos...")
 	go b.syncContacts()
 }
 
-// Sincronizar contactos desde WhatsApp
+// Synchronize contacts from WhatsApp
 func (b *WhatsAppBridge) syncContacts() {
 	if b.client == nil || !b.client.IsConnected() {
 		b.logger.Warn("Cliente no conectado para sincronizar contactos")
 		return
 	}
 
-	// Esperar un momento para que la conexión se estabilice
+	// Wait a moment for the connection to stabilize
 	time.Sleep(2 * time.Second)
 
-	// Obtener contactos usando whatsmeow
+	// Get contacts using whatsmeow
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Intentar obtener contactos del store
+	// Try to get contacts from store
 	contacts, err := b.client.Store.Contacts.GetAllContacts(ctx)
 	if err != nil {
-		b.logger.Error("Error obteniendo contactos del store:", err)
-		// Intentar método alternativo - obtener de conversaciones recientes
+		b.logger.Error("Error getting contacts from store:", err)
+		// Try alternative method - get from recent chats
 		b.syncContactsFromChats()
 		return
 	}
@@ -335,15 +335,15 @@ func (b *WhatsAppBridge) syncContacts() {
 	// Limpiar contactos existentes
 	b.contacts = make([]Contact, 0)
 
-	// Convertir y guardar contactos con prioridad de nombres del usuario
+	// Convert and save contacts with user name priority
 	for jid, contact := range contacts {
 		var contactName string
 		if contact.Found {
-			// Prioridad de nombres:
-			// 1. FullName (nombre completo que el usuario configuró)
-			// 2. FirstName (nombre que el usuario configuró)
-			// 3. PushName (nombre del perfil de la persona)
-			// 4. BusinessName (para negocios)
+			// Name priority:
+			// 1. FullName (user-configured full name)
+			// 2. FirstName (user-configured first name)
+			// 3. PushName (person's profile name)
+			// 4. BusinessName (for businesses)
 			
 			if contact.FullName != "" {
 				contactName = contact.FullName
@@ -367,20 +367,20 @@ func (b *WhatsAppBridge) syncContacts() {
 	b.logger.Info(fmt.Sprintf("📞 Sincronizados %d contactos", len(b.contacts)))
 }
 
-// Método alternativo: sincronizar contactos desde chats recientes
+// Alternative method: synchronize contacts from recent chats
 func (b *WhatsAppBridge) syncContactsFromChats() {
 	if b.client == nil || !b.client.IsConnected() {
 		return
 	}
 
-	// Obtener conversaciones recientes - usar método correcto de whatsmeow
-	// Por ahora, usar un método alternativo basado en mensajes almacenados
+	// Get recent conversations - use correct whatsmeow method
+	// For now, use an alternative method based on stored messages
 	b.syncContactsFromMessages()
 }
 
 
 
-// Método alternativo: sincronizar contactos desde mensajes almacenados
+// Alternative method: synchronize contacts from stored messages
 func (b *WhatsAppBridge) syncContactsFromMessages() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -388,25 +388,25 @@ func (b *WhatsAppBridge) syncContactsFromMessages() {
 	// Limpiar contactos existentes
 	b.contacts = make([]Contact, 0)
 	
-	// Crear un mapa para evitar duplicados
+	// Create a map to avoid duplicates
 	contactMap := make(map[string]string)
 
-	// Procesar mensajes para extraer contactos únicos
+	// Process messages to extract unique contacts
 	for _, msg := range b.messages {
 		if msg.SenderJID != "self" && msg.SenderJID != "" {
-			// Extraer el número de teléfono del JID
+			// Extract phone number from JID
 			if _, exists := contactMap[msg.SenderJID]; !exists {
-				// Usar el número como nombre temporal (se puede mejorar después)
+				// Use number as temporary name (can be improved later)
 				contactMap[msg.SenderJID] = msg.SenderJID
 			}
 		}
 	}
 
-	// Convertir mapa a slice de contactos
+	// Convert map to contacts slice
 	for jid, name := range contactMap {
 		b.contacts = append(b.contacts, Contact{
 			JID:  jid,
-			Name: name, // Por ahora usar el JID como nombre
+			Name: name, // For now use JID as name
 		})
 	}
 
