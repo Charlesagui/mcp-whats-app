@@ -12,8 +12,13 @@ import urllib.error
 
 class WhatsAppMCP:
     def __init__(self):
-        self.bridge_url = f"http://127.0.0.1:8081"
-        self.admin_token = "c80502a4c4594f6730bc320274a289847ac29e02a627e866a8066d768a081c77"
+        host = os.getenv('MCP_HOST', '127.0.0.1')
+        port = os.getenv('BRIDGE_PORT', '8081')
+        self.bridge_url = f"http://{host}:{port}"
+        
+        self.admin_token = os.getenv('ADMIN_TOKEN')
+        if not self.admin_token:
+            raise ValueError("ADMIN_TOKEN no está configurado en las variables de entorno")
         
     def _make_request(self, method, endpoint, data=None):
         """Hacer peticiones HTTP usando urllib (incluido en Python)"""
@@ -45,7 +50,7 @@ class WhatsAppMCP:
                 
         except urllib.error.URLError as e:
             if hasattr(e, 'reason'):
-                raise Exception(f"Error: No se puede conectar al bridge de WhatsApp en puerto 8081. ¿Está ejecutándose whatsapp-bridge.exe? ({e.reason})")
+                raise Exception(f"Error: No se puede conectar al bridge de WhatsApp en {self.bridge_url}. ¿Está ejecutándose whatsapp-bridge.exe? ({e.reason})")
             else:
                 raise Exception(f"Error de URL: {e}")
         except urllib.error.HTTPError as e:

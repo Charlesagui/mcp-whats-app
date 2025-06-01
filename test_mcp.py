@@ -13,7 +13,11 @@ load_dotenv(".env")
 
 def test_whatsapp_mcp():
     bridge_url = f"http://{os.getenv('MCP_HOST', '127.0.0.1')}:{os.getenv('BRIDGE_PORT', '8081')}"
-    admin_token = os.getenv('ADMIN_TOKEN', 'c80502a4c4594f6730bc320274a289847ac29e02a627e866a8066d768a081c77')
+    admin_token = os.getenv('ADMIN_TOKEN')
+    
+    if not admin_token:
+        print("Error: ADMIN_TOKEN no está configurado en las variables de entorno")
+        sys.exit(1)
     
     headers = {
         "Authorization": f"Bearer {admin_token}",

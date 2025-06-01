@@ -23,9 +23,19 @@ load_dotenv("../.env")
 
 class WhatsAppMCPServer:
     def __init__(self):
-        self.bridge_url = f"http://{os.getenv('MCP_HOST', '127.0.0.1')}:{os.getenv('BRIDGE_PORT', '8081')}"
-        self.admin_token = os.getenv('ADMIN_TOKEN', 'default_admin_token')
+        # Configuración del servidor
+        host = os.getenv('MCP_HOST', '127.0.0.1')
+        port = os.getenv('BRIDGE_PORT', '8081')
+        self.bridge_url = f"http://{host}:{port}"
+        
+        # Token de administración (obligatorio)
+        self.admin_token = os.getenv('ADMIN_TOKEN')
+        if not self.admin_token:
+            raise ValueError("ADMIN_TOKEN no está configurado en las variables de entorno")
+            
+        # Configuración de logging
         self.log_level = os.getenv('LOG_LEVEL', 'INFO')
+        self.log_path = os.getenv('LOG_PATH', '../logs')
         
         # Configurar logging
         logger.remove()

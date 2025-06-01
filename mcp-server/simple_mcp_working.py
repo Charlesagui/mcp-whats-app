@@ -4,8 +4,13 @@ import json, sys, os, urllib.request, urllib.parse, urllib.error
 
 class WhatsAppMCP:
     def __init__(self):
-        self.bridge_url = "http://127.0.0.1:8081"
-        self.admin_token = "c80502a4c4594f6730bc320274a289847ac29e02a627e866a8066d768a081c77"
+        host = os.getenv('MCP_HOST', '127.0.0.1')
+        port = os.getenv('BRIDGE_PORT', '8081')
+        self.bridge_url = f"http://{host}:{port}"
+        
+        self.admin_token = os.getenv('ADMIN_TOKEN')
+        if not self.admin_token:
+            raise ValueError("ADMIN_TOKEN no está configurado en las variables de entorno")
         
     def _make_request(self, method, endpoint, data=None):
         try:
