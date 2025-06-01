@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "whatsapp-secure": {
+      "command": "python",
+      "args": [
+        "C:/whatsapp-mcp-secure/mcp-server/main.py"
+      ],
+      "env": {
+        "PYTHONPATH": "C:/whatsapp-mcp-secure/mcp-server"
+      }
+    }
+  },
+  "globalShortcuts": {
+    "assistantToggle": "Ctrl+Shift+Space"
+  },
+  "defaults": {
+    "model": "claude-3-5-sonnet-20241022"
+  }
+}

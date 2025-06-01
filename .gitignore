@@ -1,0 +1,54 @@
+# Archivos de logs y temporales
+*.log
+logs/
+tmp/
+temp/
+
+# Archivos de configuración sensibles
+.env
+*.key
+*.pem
+*.p12
+
+# Datos y autenticación de WhatsApp
+data/
+auth/
+backups/
+
+# Entornos virtuales Python
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos binarios de Go
+*.exe
+*.dll
+*.so
+*.dylib
+whatsapp-bridge/whatsapp-bridge
+whatsapp-bridge/whatsapp-bridge.exe
+
+# Dependencias de Go
+go.sum
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Archivos de sesión
+*.session
+*.auth
+
+# Certificados y claves
+*.crt
+*.csr
