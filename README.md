@@ -99,34 +99,34 @@ taskkill /PID [process_id] /F
 
 #### ❌ "Cannot connect to WhatsApp"
 1. Verify WhatsApp Web works in your browser
-2. Cierra todas las sesiones de WhatsApp Web
-3. Ejecuta `scripts\start.bat` nuevamente
-4. Escanea el código QR cuando aparezca
+2. Close all WhatsApp Web sessions
+3. Run `scripts\start.bat` again
+4. Scan the QR code when it appears
 
-#### ❌ "Claude no reconoce las herramientas de WhatsApp"
-1. Ejecuta `python scripts\configure_claude.py`
-2. Reinicia Claude Desktop completamente
-3. Espera 30 segundos antes de usar comandos
+#### ❌ "Claude doesn't recognize WhatsApp tools"
+1. Run `python scripts\configure_claude.py`
+2. Completely restart Claude Desktop
+3. Wait 30 seconds before using commands
 
-## 🛡️ Consideraciones de Seguridad
+## 🛡️ Security Considerations
 
-⚠️ **IMPORTANTE**: Este software no está afiliado con WhatsApp. Su uso puede violar los Términos de Servicio de WhatsApp y resultar en el bloqueo de tu cuenta.
+⚠️ **IMPORTANT**: This software is not affiliated with WhatsApp. Its use may violate WhatsApp's Terms of Service and could result in your account being banned.
 
-- Solo para uso personal y educativo
-- No enviar spam o contenido malicioso
-- Mantener actualizadas las dependencias
-- Revisar logs regularmente
+- For personal and educational use only
+- Do not send spam or malicious content
+- Keep dependencies updated
+- Regularly check logs
 
-## 📞 Soporte
+## 📞 Support
 
-Para reportes de seguridad o bugs, abrir un issue en el repositorio.
+For security reports or bugs, please open an issue in the repository.
 
-## ☕ Apoyo
+## ☕ Support
 
-Si este proyecto te resultó útil y te gustaría apoyar mi trabajo, ¡invítame un café! Tu apoyo me ayuda a seguir mejorando este proyecto y creando más contenido de calidad.
+If you find this project useful and would like to support my work, feel free to buy me a coffee! Your support helps me continue improving this project and creating quality content.
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=000000)](https://www.buymeacoffee.com/aguiar843y)
 
-## 📄 Licencia
+## 📄 License
 
-MIT License - Ver archivo LICENSE para detalles.
+MIT License - See the LICENSE file for details.
