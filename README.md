@@ -1,132 +1,122 @@
 # WhatsApp MCP Secure - Local Environment
 
-Implementation of the Model Context Protocol (MCP) for WhatsApp, designed for local execution. Provides a secure and controlled environment for automating WhatsApp interactions, with emphasis on data security and privacy.
+A secure implementation of the Model Context Protocol (MCP) for WhatsApp, designed for local execution. This tool provides a controlled environment for automating WhatsApp interactions with a strong emphasis on data security and privacy.
 
-## 🔒 Security Features
-
-- ✅ Database encryption with SQLite + SQLCipher
-- ✅ Secure token authentication
-- ✅ Comprehensive logging and auditing
-- ✅ Process isolation
-- ✅ Secure credential management
-- ✅ Automatic encrypted backups
-
-## 📋 Requirements
-
-- Go 1.21+
-- Python 3.10+
-- SQLCipher
-- FFmpeg (optional, for audio messages)
-- Windows 10/11 or Linux
-
-## 🚀 Quick Start
-
-> 📖 **First time?** Follow the [Quick Start Guide](QUICKSTART.md) for a 5-minute step-by-step setup.
-
-### 🔄 Verify Installation
-
-```bash
-# Verify everything works correctly
-python test_mcp.py
-
-# Check current status
-python -c "import requests; print(requests.get('http://localhost:8081/health').json())"
+```
+Your PC ← → WhatsApp Bridge ← → Claude ← → You
 ```
 
-### Recommended Method (Windows)
+## ✨ Key Features
+
+- 💬 **Automated Messaging**: Send and receive WhatsApp messages through Claude
+- 🔒 **Security First**:
+  - Database encryption with SQLite + SQLCipher
+  - Secure token authentication
+  - Process isolation
+  - Secure credential management
+- 📊 **Comprehensive Logging**: Full audit trail of all activities
+- 🔄 **Easy Integration**: Simple setup process with Claude Desktop
+
+## 🚀 Quick Start (5 minutes)
+
+### Prerequisites
+- Windows 10/11 or Linux
+- Go 1.21+
+- Python 3.10+
+- FFmpeg (optional, for audio messages)
+
+### 1. Initial Setup
 ```bash
-# 1. Clone the repository
+# Clone the repository
 git clone https://github.com/Charlesagui/mcp-whats-app.git
 cd whatsapp-mcp-secure
 
-# 2. Configure and start (run as administrator)
+# Run setup as Administrator
+.\scripts\setup.ps1 -All
+```
+
+### 2. Start the Server
+```bash
+# Double-click this file or run in terminal:
 scripts\start.bat
 ```
+- Two new windows will open
+- One will show a **QR code**
+- **Scan it with your phone** (WhatsApp > Linked Devices)
 
-### Manual Method (optional)
-If you need more control, you can start components manually:
-
+### 3. Configure Claude
 ```bash
-# 1. Initial setup
-.\scripts\setup.ps1
+# Run this just once:
+python mcp-server\configure_claude.py
+```
+- Then **restart Claude Desktop**
+- Wait 30 seconds before testing
 
-# 2. In one terminal, start the WhatsApp bridge
-cd whatsapp-bridge
-go run main.go
-
-# 3. In another terminal, start the MCP server
-cd mcp-server
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
+### 4. Test It!
+In Claude, try:
+```
+Send a WhatsApp to [contact name] saying "Hello from Claude"
 ```
 
-## 📖 Usage Examples
+## 🛠️ Usage Examples
 
-Once set up, you can use these commands in Claude:
-
+### Send Messages
 ```
-# Send messages
-"Send a WhatsApp to Maria saying 'Hello from Claude'"
-"Send message to +549123456789: 'Automation test'"
+"Send WhatsApp to John: 'Meeting at 3pm'"
+"Send to +549123456789: 'Running late, be there in 10'"
+```
 
-# Manage contacts  
+### Manage Contacts
+```
 "Show my WhatsApp contacts"
-"Search contacts with 'John'"
-
-# Check status
-"Is WhatsApp connected?"
-"Show last 5 messages"
+"Search contacts containing 'Maria'"
 ```
 
-## ⚙️ Configuration
+### Check Status
+```
+"Is WhatsApp connected?"
+"Show recent messages"
+```
 
-1. Copy `.env.example` to `.env`
-2. Configure your tokens and credentials
-3. Run the initial setup script
+## ⚠️ Common Issues & Solutions
 
-## 🔧 Common Issues
+### QR Code Doesn't Appear
+1. Close all WhatsApp Web sessions in your browser
+2. Run `scripts\start.bat` again
+3. Wait 30 seconds for QR code to appear
 
-#### ❌ "Port 8081 is already in use"
+### Claude Doesn't Recognize WhatsApp
+1. Ensure both server windows are running
+2. Run: `python mcp-server\configure_claude.py`
+3. Restart Claude Desktop
+4. Wait 1 minute before testing
+
+### Port 8081 in Use
 ```bash
 # Windows
 netstat -ano | findstr :8081
 taskkill /PID [process_id] /F
-
-# Then restart with start.bat
 ```
 
-#### ❌ "Cannot connect to WhatsApp"
-1. Verify WhatsApp Web works in your browser
-2. Close all WhatsApp Web sessions
-3. Run `scripts\start.bat` again
-4. Scan the QR code when it appears
+## 🔒 Security & Privacy
 
-#### ❌ "Claude doesn't recognize WhatsApp tools"
-1. Run `python scripts\configure_claude.py`
-2. Completely restart Claude Desktop
-3. Wait 30 seconds before using commands
-
-## 🛡️ Security Considerations
-
-⚠️ **IMPORTANT**: This software is not affiliated with WhatsApp. Its use may violate WhatsApp's Terms of Service and could result in your account being banned.
+⚠️ **Important Notice**: This software is not affiliated with WhatsApp. Use at your own risk and be aware of WhatsApp's Terms of Service.
 
 - For personal and educational use only
 - Do not send spam or malicious content
-- Keep dependencies updated
-- Regularly check logs
+- Keep software updated
+- Monitor logs regularly
 
-## 📞 Support
+## 🤝 Support
 
-For security reports or bugs, please open an issue in the repository.
+Found a bug or have a question? Please open an issue in the repository.
 
-## ☕ Support
+## ☕ Support the Project
 
-If you find this project useful and would like to support my work, feel free to buy me a coffee! Your support helps me continue improving this project and creating quality content.
+If you find this project useful, consider supporting its development:
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=000000)](https://www.buymeacoffee.com/aguiar843y)
 
 ## 📄 License
 
-MIT License - See the LICENSE file for details.
+MIT License - See the [LICENSE](LICENSE) file for details.
