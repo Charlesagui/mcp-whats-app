@@ -121,6 +121,12 @@ taskkill /PID [process_id] /F
 
 Para reportes de seguridad o bugs, abrir un issue en el repositorio.
 
+## ☕ Apoyo
+
+Si este proyecto te resultó útil y te gustaría apoyar mi trabajo, ¡invítame un café! Tu apoyo me ayuda a seguir mejorando este proyecto y creando más contenido de calidad.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=000000)](https://www.buymeacoffee.com/aguiar843y)
+
 ## 📄 Licencia
 
 MIT License - Ver archivo LICENSE para detalles.
