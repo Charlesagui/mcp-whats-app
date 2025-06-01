@@ -1,102 +1,102 @@
-# 🚀 Guía de Inicio Rápido - WhatsApp MCP
+# 🚀 Quick Start Guide - WhatsApp MCP
 
-> **¿Qué es esto?** Un programa que conecta Claude con WhatsApp para enviar mensajes automáticamente.
+> **What is this?** A program that connects Claude with WhatsApp to send messages automatically.
 
-## ⚡ Inicio en 3 pasos (5 minutos)
+## ⚡ Get Started in 3 Steps (5 minutes)
 
-### 1️⃣ **Descargar y Configurar**
+### 1️⃣ **Download and Configure**
 ```bash
-# Ejecuta esto como ADMINISTRADOR en PowerShell
+# Run this as ADMINISTRATOR in PowerShell
 cd C:\whatsapp-mcp-secure
 .\scripts\setup.ps1 -All
 ```
 
-### 2️⃣ **Iniciar el Servidor**
+### 2️⃣ **Start the Server**
 ```bash
-# Doble clic en este archivo:
+# Double-click this file:
 scripts\start.bat
 ```
-- Se abrirán 2 ventanas nuevas
-- Una mostrará un **código QR**
-- **Escanéalo con tu teléfono** (WhatsApp > Dispositivos Vinculados)
+- Two new windows will open
+- One will show a **QR code**
+- **Scan it with your phone** (WhatsApp > Linked Devices)
 
-### 3️⃣ **Configurar Claude**
+### 3️⃣ **Configure Claude**
 ```bash
-# Ejecuta esto una sola vez:
+# Run this just once:
 cd mcp-server
 python configure_claude.py
 ```
-- Luego **reinicia Claude Desktop**
+- Then **restart Claude Desktop**
 
-## ✅ **¿Funcionó?**
+## ✅ **Did it work?**
 
-En Claude, escribe:
+In Claude, type:
 ```
-Envía un WhatsApp a [nombre del contacto] diciendo "Hola desde Claude"
+Send a WhatsApp to [contact name] saying "Hello from Claude"
 ```
 
-Si funciona: **¡Listo! 🎉**
+If it works: **You're all set! 🎉**
 
-Si no funciona: Ver [Solución de Problemas](#solución-de-problemas)
+If not: See [Troubleshooting](#troubleshooting)
 
 ---
 
-## 🔧 **¿Cómo funciona?**
+## 🔧 **How does it work?**
 
 ```
-Tu PC ← → WhatsApp Bridge ← → Claude ← → Tú
+Your PC ← → WhatsApp Bridge ← → Claude ← → You
 ```
 
-1. **WhatsApp Bridge**: Conecta con WhatsApp Web
-2. **MCP Server**: Traduce comandos de Claude 
-3. **Claude Desktop**: Tu interfaz para dar órdenes
+1. **WhatsApp Bridge**: Connects to WhatsApp Web
+2. **MCP Server**: Translates Claude's commands 
+3. **Claude Desktop**: Your interface to give commands
 
 ---
 
-## 📱 **Comandos útiles**
+## 📱 **Useful Commands**
 
-### Enviar mensajes
+### Send messages
 ```
-Envía WhatsApp a Juan: "Hola, ¿cómo estás?"
-Envía a +549123456789: "Mensaje de prueba"
-```
-
-### Ver contactos
-```
-Muéstrame mis contactos de WhatsApp
-Busca contactos que contengan "María"
+Send WhatsApp to John: "Hi, how are you?"
+Send to +549123456789: "Test message"
 ```
 
-### Verificar estado
+### View contacts
 ```
-¿Está conectado WhatsApp?
-Muestra los últimos mensajes
+Show my WhatsApp contacts
+Search contacts containing "Maria"
+```
+
+### Check status
+```
+Is WhatsApp connected?
+Show recent messages
 ```
 
 ---
 
-## ❌ **Solución de Problemas** {#solución-de-problemas}
+## ❌ **Troubleshooting** {#troubleshooting}
 
-### El código QR no aparece
-1. Cierra todo
-2. Ejecuta `scripts\start.bat` de nuevo
-3. Espera 30 segundos
+### QR code doesn't appear
+1. Close everything
+2. Run `scripts\start.bat` again
+3. Wait 30 seconds
 
-### Claude no reconoce WhatsApp
-1. Verifica que las 2 ventanas estén abiertas
-2. Ejecuta: `python configure_claude.py`
-3. Reinicia Claude Desktop
-4. Espera 1 minuto antes de probar
+### Claude doesn't recognize WhatsApp
+1. Make sure both windows are open
+2. Run: `python configure_claude.py`
+3. Restart Claude Desktop
+4. Wait 1 minute before testing
 
-### "Error de conexión"
-1. Verifica tu internet
-2. Revisa que WhatsApp Web funcione en el navegador
-3. Reinicia el proceso completo
+### "Connection error"
+1. Check your internet connection
+2. Make sure WhatsApp Web works in your browser
+3. Restart the whole process
 
-### Error de "Puerto ocupado"
-1. Abre Administrador de Tareas
-2. Busca procesos `go.exe` o `python.exe`
-3. Termínalos y vuelve a intentar
+### "Port in use" error
+1. Open Task Manager
+2. Look for `go.exe` or `python.exe` processes
+3. End them and try again
 
 ---
 

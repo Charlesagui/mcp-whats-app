@@ -1,60 +1,60 @@
-# WhatsApp MCP Secure - Entorno Local
+# WhatsApp MCP Secure - Local Environment
 
-Implementación del Model Context Protocol (MCP) para WhatsApp, diseñada para ejecución local. Proporciona un entorno seguro y controlado para la automatización de interacciones con WhatsApp, con énfasis en seguridad y privacidad de los datos.
+Implementation of the Model Context Protocol (MCP) for WhatsApp, designed for local execution. Provides a secure and controlled environment for automating WhatsApp interactions, with emphasis on data security and privacy.
 
-## 🔒 Características de Seguridad
+## 🔒 Security Features
 
-- ✅ Cifrado de base de datos con SQLite + SQLCipher
-- ✅ Autenticación con tokens seguros
-- ✅ Logging y auditoría completos
-- ✅ Aislamiento de procesos
-- ✅ Gestión segura de credenciales
-- ✅ Backups automáticos cifrados
+- ✅ Database encryption with SQLite + SQLCipher
+- ✅ Secure token authentication
+- ✅ Comprehensive logging and auditing
+- ✅ Process isolation
+- ✅ Secure credential management
+- ✅ Automatic encrypted backups
 
-## 📋 Requisitos
+## 📋 Requirements
 
 - Go 1.21+
 - Python 3.10+
 - SQLCipher
-- FFmpeg (opcional, para mensajes de audio)
-- Windows 10/11 o Linux
+- FFmpeg (optional, for audio messages)
+- Windows 10/11 or Linux
 
-## 🚀 Inicio Rápido
+## 🚀 Quick Start
 
-> 📖 **¿Primera vez?** Sigue la [Guía de Inicio Rápido](QUICKSTART.md) para una configuración paso a paso en 5 minutos.
+> 📖 **First time?** Follow the [Quick Start Guide](QUICKSTART.md) for a 5-minute step-by-step setup.
 
-### 🔄 Verificar Instalación
+### 🔄 Verify Installation
 
 ```bash
-# Verificar que todo funciona correctamente
+# Verify everything works correctly
 python test_mcp.py
 
-# Ver estado actual
+# Check current status
 python -c "import requests; print(requests.get('http://localhost:8081/health').json())"
 ```
 
-### Método Recomendado (Windows)
+### Recommended Method (Windows)
 ```bash
-# 1. Clonar el repositorio
+# 1. Clone the repository
 git clone https://github.com/Charlesagui/mcp-whats-app.git
 cd whatsapp-mcp-secure
 
-# 2. Configurar e iniciar (ejecutar como administrador)
+# 2. Configure and start (run as administrator)
 scripts\start.bat
 ```
 
-### Método Manual (opcional)
-Si necesitas más control, puedes iniciar los componentes manualmente:
+### Manual Method (optional)
+If you need more control, you can start components manually:
 
 ```bash
-# 1. Configuración inicial
+# 1. Initial setup
 .\scripts\setup.ps1
 
-# 2. En una terminal, iniciar el bridge de WhatsApp
+# 2. In one terminal, start the WhatsApp bridge
 cd whatsapp-bridge
 go run main.go
 
-# 3. En otra terminal, iniciar el servidor MCP
+# 3. In another terminal, start the MCP server
 cd mcp-server
 python -m venv venv
 venv\Scripts\activate
@@ -62,43 +62,43 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## 📖 Ejemplos de Uso
+## 📖 Usage Examples
 
-Una vez configurado, puedes usar estos comandos en Claude:
+Once set up, you can use these commands in Claude:
 
 ```
-# Enviar mensajes
-"Envía un WhatsApp a María diciendo 'Hola desde Claude'"
-"Manda mensaje a +549123456789: 'Prueba de automatización'"
+# Send messages
+"Send a WhatsApp to Maria saying 'Hello from Claude'"
+"Send message to +549123456789: 'Automation test'"
 
-# Gestionar contactos  
-"Muestra mis contactos de WhatsApp"
-"Busca contactos con 'Juan'"
+# Manage contacts  
+"Show my WhatsApp contacts"
+"Search contacts with 'John'"
 
-# Verificar estado
-"¿Está conectado WhatsApp?"
-"Muestra los últimos 5 mensajes"
+# Check status
+"Is WhatsApp connected?"
+"Show last 5 messages"
 ```
 
-## ⚙️ Configuración
+## ⚙️ Configuration
 
-1. Copia `.env.example` a `.env`
-2. Configura tus tokens y credenciales
-3. Ejecuta el script de configuración inicial
+1. Copy `.env.example` to `.env`
+2. Configure your tokens and credentials
+3. Run the initial setup script
 
-## 🔧 Solución de Problemas Comunes
+## 🔧 Common Issues
 
-#### ❌ "Puerto 8081 ya está en uso"
+#### ❌ "Port 8081 is already in use"
 ```bash
 # Windows
 netstat -ano | findstr :8081
-taskkill /PID [número_de_proceso] /F
+taskkill /PID [process_id] /F
 
-# Luego reiniciar con start.bat
+# Then restart with start.bat
 ```
 
-#### ❌ "No se puede conectar a WhatsApp"
-1. Verifica que WhatsApp Web funcione en tu navegador
+#### ❌ "Cannot connect to WhatsApp"
+1. Verify WhatsApp Web works in your browser
 2. Cierra todas las sesiones de WhatsApp Web
 3. Ejecuta `scripts\start.bat` nuevamente
 4. Escanea el código QR cuando aparezca
