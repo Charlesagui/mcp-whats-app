@@ -3,7 +3,7 @@
     "whatsapp-secure": {
       "command": "python",
       "args": [
-        "C:/whatsapp-mcp-secure/mcp-server/main.py"
+        "C:/whatsapp-mcp-secure/mcp-server/simple_mcp_working.py"
       ],
       "env": {
         "PYTHONPATH": "C:/whatsapp-mcp-secure/mcp-server"

@@ -29,7 +29,7 @@ timeout /t 3 /nobreak >nul
 
 REM Iniciar MCP Server en ventana separada
 echo Iniciando MCP Server...
-start "MCP Server" cmd /k "cd mcp-server && venv\Scripts\activate && python main.py"
+start "MCP Server" cmd /k "cd mcp-server && python simple_mcp_working.py"
 
 echo.
 echo ✓ Servicios iniciados
