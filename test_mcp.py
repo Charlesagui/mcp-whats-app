@@ -93,4 +93,4 @@ def test_whatsapp_mcp():
         print(f"   ❌ Error: {e}")
     
     print("\n" + "=" * 50)
-    print("🎉 PRUEBA
+    print("🎉 PRUEBA")#prueba exitosa
