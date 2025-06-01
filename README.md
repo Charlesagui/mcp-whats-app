@@ -23,7 +23,7 @@ Una implementación segura del Model Context Protocol (MCP) para WhatsApp con me
 
 ```bash
 # 1. Clonar el repositorio
-git clone <este-repo>
+git clone https://github.com/Charlesagui/mcp-whats-app.git
 cd whatsapp-mcp-secure
 
 # 2. Configurar entorno
