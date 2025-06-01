@@ -2,6 +2,30 @@
 """WhatsApp MCP Server - Versión funcional"""
 import json, sys, os, urllib.request, urllib.parse, urllib.error
 
+# Cargar variables desde archivo .env
+def load_env_file(env_path=None):
+    """Carga variables de entorno desde archivo .env"""
+    if env_path is None:
+        # Buscar .env en el directorio padre (donde está el proyecto)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        env_path = os.path.join(os.path.dirname(current_dir), '.env')
+    
+    if os.path.exists(env_path):
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")  # Remover comillas
+                    os.environ[key] = value
+        print(f"Variables cargadas desde: {env_path}", file=sys.stderr)
+    else:
+        print(f"Archivo .env no encontrado en: {env_path}", file=sys.stderr)
+
+# Cargar variables de entorno al inicio
+load_env_file()
+
 class WhatsAppMCP:
     def __init__(self):
         host = os.getenv('MCP_HOST', '127.0.0.1')
