@@ -335,17 +335,31 @@ func (b *WhatsAppBridge) syncContacts() {
 	// Limpiar contactos existentes
 	b.contacts = make([]Contact, 0)
 
-	// Convertir y guardar contactos
+	// Convertir y guardar contactos con prioridad de nombres del usuario
 	for jid, contact := range contacts {
-		if contact.Found && contact.PushName != "" {
+		var contactName string
+		if contact.Found {
+			// Prioridad de nombres:
+			// 1. FullName (nombre completo que el usuario configuró)
+			// 2. FirstName (nombre que el usuario configuró)
+			// 3. PushName (nombre del perfil de la persona)
+			// 4. BusinessName (para negocios)
+			
+			if contact.FullName != "" {
+				contactName = contact.FullName
+			} else if contact.FirstName != "" {
+				contactName = contact.FirstName
+			} else if contact.PushName != "" {
+				contactName = contact.PushName
+			} else if contact.BusinessName != "" {
+				contactName = contact.BusinessName
+			} else {
+				continue // Skip si no hay nombre
+			}
+			
 			b.contacts = append(b.contacts, Contact{
 				JID:  jid.String(),
-				Name: contact.PushName,
-			})
-		} else if contact.Found && contact.BusinessName != "" {
-			b.contacts = append(b.contacts, Contact{
-				JID:  jid.String(),
-				Name: contact.BusinessName,
+				Name: contactName,
 			})
 		}
 	}
