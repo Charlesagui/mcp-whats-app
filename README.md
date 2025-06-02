@@ -1,50 +1,50 @@
 # WhatsApp MCP Server
 
-Este es un servidor Model Context Protocol (MCP) para WhatsApp que permite integrar WhatsApp con Claude Desktop.
+This is a Model Context Protocol (MCP) server for WhatsApp that allows integration of WhatsApp with Claude Desktop.
 
-## Características
+## Features
 
-- **Búsqueda y lectura de mensajes** personales de WhatsApp (incluyendo imágenes, videos, documentos y mensajes de audio)
-- **Búsqueda de contactos** y envío de mensajes a individuos o grupos
-- **Envío de archivos multimedia** incluyendo imágenes, videos, documentos y mensajes de audio
-- **Conexión directa** a tu cuenta personal de WhatsApp vía la API web multidevice de WhatsApp
-- **Almacenamiento local** de todos los mensajes en una base de datos SQLite
+- **Search and read** personal WhatsApp messages (including images, videos, documents, and audio messages)
+- **Search contacts** and send messages to individuals or groups
+- **Send multimedia files** including images, videos, documents, and audio messages
+- **Direct connection** to your personal WhatsApp account via the WhatsApp multi-device web API
+- **Local storage** of all messages in an SQLite database
 
-## Arquitectura
+## Architecture
 
-El proyecto consta de dos componentes principales:
+The project consists of two main components:
 
-1. **Go WhatsApp Bridge** (`whatsapp-bridge/`): Aplicación Go que se conecta a la API web de WhatsApp, maneja la autenticación via código QR, y almacena el historial de mensajes en SQLite.
+1.  **Go WhatsApp Bridge** (`whatsapp-bridge/`): A Go application that connects to the WhatsApp web API, handles authentication via QR code, and stores message history in SQLite.
 
-2. **Python MCP Server** (`whatsapp-mcp-server/`): Servidor Python que implementa el Protocolo de Contexto de Modelo (MCP), proporcionando herramientas estandarizadas para que Claude interactúe con los datos de WhatsApp.
+2.  **Python MCP Server** (`whatsapp-mcp-server/`): A Python server that implements the Model Context Protocol (MCP), providing standardized tools for Claude to interact with WhatsApp data.
 
-## Requisitos
+## Requirements
 
 - Go 1.24.1+
 - Python 3.11+
-- Claude Desktop app (o Cursor)
-- UV (gestor de paquetes Python): `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- FFmpeg (opcional) - Solo necesario para mensajes de audio
+- Claude Desktop app (or Cursor)
+- UV (Python package manager): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- FFmpeg (optional) - Only needed for audio messages
 
-## Instalación
+## Installation
 
-### 1. Clonar el repositorio
+### 1. Clone the repository
 ```bash
-git clone https://github.com/tuusuario/mi-whatsapp-mcp.git
-cd mi-whatsapp-mcp
+git clone https://github.com/Charlesagui/mcp-whats-app.git
+cd mcp-whats-app
 ```
 
-### 2. Ejecutar el bridge de WhatsApp
+### 2. Run the WhatsApp bridge
 ```bash
 cd whatsapp-bridge
 go run main.go
 ```
 
-La primera vez deberás escanear un código QR con tu aplicación móvil de WhatsApp para autenticarte.
+The first time you run this, you will need to scan a QR code with your WhatsApp mobile app to authenticate.
 
-### 3. Conectar al servidor MCP
+### 3. Connect to the MCP Server
 
-Copia la siguiente configuración JSON:
+Copy the following JSON configuration:
 
 ```json
 {
@@ -53,7 +53,7 @@ Copia la siguiente configuración JSON:
       "command": "{{PATH_TO_UV}}",
       "args": [
         "--directory",
-        "{{PATH_TO_SRC}}/mi-whatsapp-mcp/whatsapp-mcp-server",
+        "{{PATH_TO_SRC}}/mcp-whats-app/whatsapp-mcp-server",
         "run",
         "main.py"
       ]
@@ -62,55 +62,55 @@ Copia la siguiente configuración JSON:
 }
 ```
 
-Para Claude Desktop, guarda esto como `claude_desktop_config.json` en:
+For Claude Desktop, save this as `claude_desktop_config.json` in:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
-### 4. Reiniciar Claude Desktop
+### 4. Restart Claude Desktop
 
-Abre Claude Desktop y deberías ver WhatsApp como una integración disponible.
+Open Claude Desktop, and you should see WhatsApp as an available integration.
 
-## Configuración para Windows
+## Windows Setup
 
-Si estás ejecutando en Windows, `go-sqlite3` requiere CGO habilitado:
+If you are running on Windows, `go-sqlite3` requires CGO to be enabled:
 
-### 1. Instalar un compilador C
-Recomendamos usar [MSYS2](https://www.msys2.org/) para instalar un compilador C para Windows.
+### 1. Install a C compiler
+We recommend using [MSYS2](https://www.msys2.org/) to install a C compiler for Windows.
 
-### 2. Habilitar CGO y ejecutar la aplicación
+### 2. Enable CGO and run the application
 ```bash
 cd whatsapp-bridge
 go env -w CGO_ENABLED=1
 go run main.go
 ```
 
-## Herramientas Disponibles
+## Available Tools
 
-Una vez conectado, Claude puede acceder a las siguientes herramientas:
+Once connected, Claude can access the following tools:
 
-- `search_contacts`: Buscar contactos por nombre o número de teléfono
-- `list_messages`: Recuperar mensajes con filtros opcionales y contexto
-- `list_chats`: Listar chats disponibles con metadatos
-- `get_chat`: Obtener información sobre un chat específico
-- `send_message`: Enviar un mensaje de WhatsApp a un número específico o JID de grupo
-- `send_file`: Enviar un archivo (imagen, video, audio crudo, documento)
-- `send_audio_message`: Enviar un archivo de audio como mensaje de voz de WhatsApp
-- `download_media`: Descargar multimedia de un mensaje de WhatsApp
+- `search_contacts`: Search contacts by name or phone number
+- `list_messages`: Retrieve messages with optional filters and context
+- `list_chats`: List available chats with metadata
+- `get_chat`: Get information about a specific chat
+- `send_message`: Send a WhatsApp message to a specific number or group JID
+- `send_file`: Send a file (image, video, raw audio, document)
+- `send_audio_message`: Send an audio file as a WhatsApp voice message
+- `download_media`: Download media from a WhatsApp message
 
-## Almacenamiento de Datos
+## Data Storage
 
-- Todo el historial de mensajes se almacena en una base de datos SQLite dentro del directorio `whatsapp-bridge/store/`
-- La base de datos mantiene tablas para chats y mensajes
-- Los mensajes están indexados para búsqueda y recuperación eficiente
+- All message history is stored in an SQLite database within the `whatsapp-bridge/store/` directory
+- The database maintains tables for chats and messages
+- Messages are indexed for efficient search and retrieval
 
-## Solución de Problemas
+## Troubleshooting
 
-- **Código QR no se muestra**: Reinicia el script de autenticación. Si persiste, verifica que tu terminal soporte mostrar códigos QR.
-- **WhatsApp ya conectado**: Si tu sesión ya está activa, el bridge Go se reconectará automáticamente sin mostrar un código QR.
-- **Límite de dispositivos alcanzado**: WhatsApp limita el número de dispositivos vinculados. Deberás eliminar un dispositivo existente desde WhatsApp en tu teléfono.
-- **Mensajes no cargan**: Después de la autenticación inicial, puede tomar varios minutos para que tu historial de mensajes cargue.
+- **QR code not displaying**: Restart the authentication script. If it persists, check if your terminal supports displaying QR codes.
+- **WhatsApp already connected**: If your session is already active, the Go bridge will reconnect automatically without showing a QR code.
+- **Device limit reached**: WhatsApp limits the number of linked devices. You will need to remove an existing device from WhatsApp on your phone.
+- **Messages not loading**: After initial authentication, it may take several minutes for your message history to load.
 
-## Licencia
+## License
 
 MIT License
