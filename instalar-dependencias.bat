@@ -4,7 +4,7 @@ echo Instalando dependencias para WhatsApp MCP...
 echo.
 
 echo === Instalando dependencias Go ===
-cd /d "C:\Users\aguia\Desktop\mi-whatsapp-mcp\whatsapp-bridge"
+cd /d "%~dp0whatsapp-bridge"
 go mod tidy
 if %errorlevel% neq 0 (
     echo ERROR: Fallo la instalacion de dependencias Go
@@ -14,7 +14,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo === Verificando dependencias Python ===
-cd /d "C:\Users\aguia\Desktop\mi-whatsapp-mcp\whatsapp-mcp-server"
+cd /d "%~dp0whatsapp-mcp-server"
 uv sync
 if %errorlevel% neq 0 (
     echo ERROR: Fallo la instalacion de dependencias Python
@@ -27,6 +27,17 @@ echo === Verificando CGO ===
 go env CGO_ENABLED
 echo.
 
+echo === Creando archivo .env si no existe ===
+cd /d "%~dp0"
+if not exist ".env" (
+    copy ".env.example" ".env"
+    echo Archivo .env creado desde .env.example
+    echo REVISA Y AJUSTA las configuraciones en .env si es necesario
+) else (
+    echo Archivo .env ya existe
+)
+
+echo.
 echo ✅ Todas las dependencias instaladas correctamente
 echo.
 echo Proximos pasos:

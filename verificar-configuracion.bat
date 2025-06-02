@@ -3,7 +3,7 @@ title Verificar MCP Server - WhatsApp
 echo Verificando configuracion del MCP Server de WhatsApp...
 echo.
 
-cd /d "C:\Users\aguia\Desktop\mi-whatsapp-mcp\whatsapp-mcp-server"
+cd /d "%~dp0whatsapp-mcp-server"
 
 echo Verificando UV...
 uv --version

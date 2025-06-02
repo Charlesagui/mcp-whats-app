@@ -13,12 +13,14 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
+	"github.com/joho/godotenv"
 
 	"bytes"
 
@@ -29,6 +31,40 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
+)
+
+// Configuration from environment variables
+func loadEnvConfig() {
+	// Load .env file from parent directory
+	envPath := filepath.Join("..", ".env")
+	if err := godotenv.Load(envPath); err != nil {
+		// .env file is optional, continue with defaults
+		fmt.Printf("No .env file found at %s, using defaults\n", envPath)
+	}
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvOrDefaultInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+var (
+	REST_SERVER_PORT = getEnvOrDefaultInt("REST_SERVER_PORT", 8080)
+	REST_SERVER_HOST = getEnvOrDefault("REST_SERVER_HOST", "localhost")
+	MESSAGES_DB_NAME = getEnvOrDefault("MESSAGES_DB_NAME", "messages.db")
+	WHATSAPP_DB_NAME = getEnvOrDefault("WHATSAPP_DB_NAME", "whatsapp.db")
+	DEBUG_MODE = getEnvOrDefault("DEBUG", "false") == "true"
 )
 
 // Message represents a chat message for our client
@@ -54,7 +90,7 @@ func NewMessageStore() (*MessageStore, error) {
 	}
 
 	// Open SQLite database for messages
-	db, err := sql.Open("sqlite3", "file:store/messages.db?_foreign_keys=on")
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:store/%s?_foreign_keys=on", MESSAGES_DB_NAME))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
@@ -781,6 +817,9 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	}()
 }
 func main() {
+	// Load environment configuration
+	loadEnvConfig()
+	
 	// Set up logger
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
@@ -794,7 +833,7 @@ func main() {
 		return
 	}
 
-	container, err := sqlstore.New("sqlite3", "file:store/whatsapp.db?_foreign_keys=on", dbLog)
+	container, err := sqlstore.New("sqlite3", fmt.Sprintf("file:store/%s?_foreign_keys=on", WHATSAPP_DB_NAME), dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
 		return
@@ -900,7 +939,7 @@ func main() {
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
 	// Start REST API server
-	startRESTServer(client, messageStore, 8080)
+	startRESTServer(client, messageStore, REST_SERVER_PORT)
 
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)
