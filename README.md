@@ -1,5 +1,7 @@
 # WhatsApp MCP Server
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow.svg)](https://www.buymeacoffee.com/aguiar843y)
+
 This is a Model Context Protocol (MCP) server for WhatsApp that allows integration of WhatsApp with Claude Desktop.
 
 ## Features
