@@ -1,0 +1,6 @@
+# Compiled binaries
+whatsapp-bridge.exe
+main.exe
+
+# Python cache
+__pycache__/
