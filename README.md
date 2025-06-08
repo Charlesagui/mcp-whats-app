@@ -3,7 +3,7 @@
 A secure implementation of the Model Context Protocol (MCP) for WhatsApp, designed for local execution. This tool provides a controlled environment for automating WhatsApp interactions with a strong emphasis on data security and privacy.
 
 ```
-Your PC ← → WhatsApp Bridge ← → Claude ← → You!
+Your PC ← → WhatsApp Bridge ← → Claude ← → You!!!!!!
 ```
 
 ## ✨ Key Features
