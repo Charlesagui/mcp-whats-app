@@ -7,10 +7,27 @@ import os.path
 import requests
 import json
 import audio
+import unicodedata
 from dotenv import load_dotenv
+from unidecode import unidecode
+from fuzzywuzzy import process, fuzz
+
+# Import optimized contact search functions
+from whatsapp_contacts import (
+    search_contacts as optimized_search_contacts,
+    search_contacts_enhanced as optimized_search_contacts_enhanced,
+    smart_search_contacts as optimized_smart_search_contacts,
+    smart_search_contacts_enhanced as optimized_smart_search_contacts_enhanced
+)
 
 # Load environment variables
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+
+def normalize(text):
+    """Normaliza el texto eliminando acentos y convirtiéndolo a minúsculas."""
+    if not text:
+        return ""
+    return unidecode(text).lower()
 
 # Configuration from environment
 WHATSAPP_API_HOST = os.getenv('WHATSAPP_API_HOST', 'localhost')
@@ -18,8 +35,9 @@ WHATSAPP_API_PORT = os.getenv('WHATSAPP_API_PORT', '8080')
 WHATSAPP_API_BASE_URL = os.getenv('WHATSAPP_API_BASE_URL', f'http://{WHATSAPP_API_HOST}:{WHATSAPP_API_PORT}/api')
 MESSAGES_DB_NAME = os.getenv('MESSAGES_DB_NAME', 'messages.db')
 
-# Database path
+# Database paths
 MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', MESSAGES_DB_NAME)
+WHATSAPP_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'whatsapp.db')
 
 @dataclass
 class Message:
@@ -58,7 +76,294 @@ class MessageContext:
     before: List[Message]
     after: List[Message]
 
-def get_sender_name(sender_jid: str) -> str:
+def get_real_contact_name(jid: str) -> Optional[str]:
+    """Get the real contact name from whatsapp.db"""
+    try:
+        conn = sqlite3.connect(WHATSAPP_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT full_name, first_name, push_name
+            FROM whatsmeow_contacts
+            WHERE their_jid = ?
+            ORDER BY 
+                CASE WHEN full_name IS NOT NULL AND TRIM(full_name) != '' THEN 1 ELSE 0 END DESC,
+                CASE WHEN first_name IS NOT NULL AND TRIM(first_name) != '' THEN 1 ELSE 0 END DESC,
+                CASE WHEN push_name IS NOT NULL AND TRIM(push_name) != '' THEN 1 ELSE 0 END DESC
+            LIMIT 1
+        """, (jid,))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            # Return the first non-empty name in order of preference: full_name, first_name, push_name
+            for name in result:
+                if name and name.strip():
+                    return name.strip()
+        
+        return None
+        
+    except sqlite3.Error as e:
+        print(f"Database error while getting real contact name: {e}")
+        return None
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+def search_contacts_enhanced(query: str, limit: int = 25, include_groups: bool = False) -> List[Contact]:
+    """Enhanced contact search using both messages.db and whatsapp.db for complete contact info."""
+    try:
+        # Enhanced validation
+        if query is None:
+            print("INFO: Query is None, returning empty results")
+            return []
+        
+        clean_query = query.strip().lower()
+        if len(clean_query) == 0:
+            # For empty queries, return all contacts
+            clean_query = ""
+        elif len(clean_query) < 1:
+            print("INFO: Query too short, returning empty results")
+            return []
+            
+        # Check if databases exist
+        if not os.path.exists(MESSAGES_DB_PATH):
+            print(f"WARNING: Messages database not found at {MESSAGES_DB_PATH}")
+            return []
+            
+        if not os.path.exists(WHATSAPP_DB_PATH):
+            print(f"WARNING: WhatsApp database not found at {WHATSAPP_DB_PATH}")
+            return []
+        
+        # Connect to both databases
+        messages_conn = sqlite3.connect(MESSAGES_DB_PATH)
+        whatsapp_conn = sqlite3.connect(WHATSAPP_DB_PATH)
+        
+        messages_cursor = messages_conn.cursor()
+        whatsapp_cursor = whatsapp_conn.cursor()
+        
+        # Get all contacts from whatsapp.db with real names
+        whatsapp_cursor.execute("""
+            SELECT DISTINCT 
+                their_jid,
+                COALESCE(
+                    NULLIF(TRIM(full_name), ''),
+                    NULLIF(TRIM(first_name), ''),
+                    NULLIF(TRIM(push_name), '')
+                ) as display_name,
+                full_name,
+                first_name, 
+                push_name
+            FROM whatsmeow_contacts
+            WHERE their_jid IS NOT NULL
+            ORDER BY display_name COLLATE NOCASE
+        """)
+        
+        whatsapp_contacts = whatsapp_cursor.fetchall()
+        
+        # Also get chats that might not be in contacts
+        group_filter = "" if include_groups else "AND jid NOT LIKE '%@g.us'"
+        
+        messages_cursor.execute(f"""
+            SELECT DISTINCT 
+                jid,
+                name
+            FROM chats
+            WHERE jid != '0@s.whatsapp.net'
+                {group_filter}
+        """)
+        
+        chat_contacts = messages_cursor.fetchall()
+        
+        # Combine and deduplicate
+        all_contacts = {}
+        
+        # First add WhatsApp contacts (priority)
+        for contact in whatsapp_contacts:
+            jid, display_name, full_name, first_name, push_name = contact
+            if jid and not (not include_groups and jid.endswith('@g.us')):
+                all_contacts[jid] = {
+                    'jid': jid,
+                    'name': display_name,
+                    'full_name': full_name,
+                    'first_name': first_name,
+                    'push_name': push_name,
+                    'source': 'whatsapp'
+                }
+        
+        # Then add chat contacts (if not already present)
+        for chat in chat_contacts:
+            jid, name = chat
+            if jid not in all_contacts and jid:
+                all_contacts[jid] = {
+                    'jid': jid,
+                    'name': name,
+                    'source': 'messages'
+                }
+        
+        # Filter by query if provided
+        result = []
+        if clean_query == "":
+            # Return all contacts
+            for contact_data in all_contacts.values():
+                jid = contact_data['jid']
+                name = contact_data['name']
+                phone_number = jid.split('@')[0] if '@' in jid else jid
+                
+                contact = Contact(
+                    phone_number=phone_number,
+                    name=name if name and name != phone_number else None,
+                    jid=jid
+                )
+                result.append(contact)
+        else:
+            # Search with scoring
+            scored_contacts = []
+            
+            for contact_data in all_contacts.values():
+                jid = contact_data['jid']
+                name = contact_data['name'] or ''
+                
+                # Score calculation
+                score = 0
+                if name:
+                    name_lower = name.lower()
+                    if name_lower == clean_query:
+                        score = 100
+                    elif name_lower.startswith(clean_query):
+                        score = 90
+                    elif clean_query in name_lower:
+                        score = 80
+                    elif any(word.startswith(clean_query) for word in name_lower.split()):
+                        score = 70
+                
+                # Also check phone number
+                phone_number = jid.split('@')[0] if '@' in jid else jid
+                if clean_query in phone_number:
+                    score = max(score, 60)
+                
+                if score > 0:
+                    scored_contacts.append((score, contact_data))
+            
+            # Sort by score and limit
+            scored_contacts.sort(key=lambda x: x[0], reverse=True)
+            
+            for score, contact_data in scored_contacts[:limit]:
+                jid = contact_data['jid']
+                name = contact_data['name']
+                phone_number = jid.split('@')[0] if '@' in jid else jid
+                
+                contact = Contact(
+                    phone_number=phone_number,
+                    name=name if name and name != phone_number else None,
+                    jid=jid
+                )
+                result.append(contact)
+        
+        # If no results and we had a query, try fuzzy matching
+        if not result and clean_query and len(clean_query) >= 2:
+            fuzzy_result = smart_search_contacts_enhanced(query, limit, include_groups)
+            if fuzzy_result:
+                return fuzzy_result
+        
+        return result[:limit]
+        
+    except sqlite3.Error as e:
+        print(f"Database error in enhanced search: {e}")
+        return search_contacts(query, limit, include_groups)
+    except Exception as e:
+        print(f"Unexpected error in enhanced search: {e}")
+        return search_contacts(query, limit, include_groups)
+    finally:
+        if 'messages_conn' in locals():
+            messages_conn.close()
+        if 'whatsapp_conn' in locals():
+            whatsapp_conn.close()
+
+def smart_search_contacts_enhanced(query: str, limit: int = 25, include_groups: bool = False, similarity_threshold: float = 0.6) -> List[Contact]:
+    """Enhanced smart search using both databases with fuzzy matching."""
+    try:
+        if not query or len(query.strip()) < 1:
+            print("INFO: Query too short, returning empty results")
+            return []
+            
+        # Check if databases exist
+        if not os.path.exists(WHATSAPP_DB_PATH):
+            print(f"WARNING: WhatsApp database not found at {WHATSAPP_DB_PATH}")
+            return smart_search_contacts(query, limit, include_groups, similarity_threshold)
+        
+        # Connect to WhatsApp database
+        whatsapp_conn = sqlite3.connect(WHATSAPP_DB_PATH)
+        whatsapp_cursor = whatsapp_conn.cursor()
+        
+        # Get all contacts with names from whatsapp.db
+        whatsapp_cursor.execute("""
+            SELECT DISTINCT 
+                their_jid,
+                COALESCE(
+                    NULLIF(TRIM(full_name), ''),
+                    NULLIF(TRIM(first_name), ''),
+                    NULLIF(TRIM(push_name), '')
+                ) as display_name
+            FROM whatsmeow_contacts
+            WHERE their_jid IS NOT NULL
+                AND display_name IS NOT NULL
+        """)
+        
+        all_contacts = whatsapp_cursor.fetchall()
+        
+        # Filter groups if needed
+        if not include_groups:
+            all_contacts = [(jid, name) for jid, name in all_contacts if not jid.endswith('@g.us')]
+        
+        # Prepare data for fuzzywuzzy
+        normalized_query = normalize(query)
+        contact_choices = []
+        contact_map = {}
+        
+        for jid, display_name in all_contacts:
+            if display_name:
+                normalized_name = normalize(display_name)
+                contact_choices.append(normalized_name)
+                contact_map[normalized_name] = (jid, display_name)
+        
+        if not contact_choices:
+            print("INFO: No contacts with names found in WhatsApp database")
+            return []
+        
+        # Use fuzzywuzzy for intelligent matching
+        fuzzy_threshold = int(similarity_threshold * 100)
+        best_matches = process.extract(normalized_query, contact_choices, limit=limit)
+        
+        # Build results
+        result = []
+        for match_name, score in best_matches:
+            if score >= fuzzy_threshold:
+                jid, original_name = contact_map[match_name]
+                phone_number = jid.split('@')[0] if '@' in jid else jid
+                
+                contact = Contact(
+                    phone_number=phone_number,
+                    name=original_name,
+                    jid=jid
+                )
+                result.append(contact)
+                
+                # Show match details for debugging
+                if len(result) <= 3:
+                    print(f"Enhanced fuzzy match: {original_name} (Score: {score})")
+        
+        return result
+        
+    except sqlite3.Error as e:
+        print(f"Database error in enhanced smart search: {e}")
+        return smart_search_contacts(query, limit, include_groups, similarity_threshold)
+    except Exception as e:
+        print(f"Unexpected error in enhanced smart search: {e}")
+        return smart_search_contacts(query, limit, include_groups, similarity_threshold)
+    finally:
+        if 'whatsapp_conn' in locals():
+            whatsapp_conn.close()
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
@@ -430,9 +735,26 @@ def search_contacts(query: str, limit: int = 25, include_groups: bool = False) -
     """Search contacts by name or phone number with advanced fuzzy matching."""
     try:
         # Enhanced validation
-        if not query or len(query.strip()) < 1:
+        if query is None:
+            print("INFO: Query is None, returning empty results")
+            return []
+        
+        clean_query = query.strip().lower()
+        if len(clean_query) == 0:
+            # For empty queries, return all contacts
+            clean_query = ""
+            exact_pattern = ""
+            starts_with_pattern = "%"
+            contains_pattern = "%"
+            word_boundary_pattern = "%"
+        elif len(clean_query) < 1:
             print("INFO: Query too short, returning empty results")
             return []
+        else:
+            exact_pattern = clean_query
+            starts_with_pattern = clean_query + '%'
+            contains_pattern = '%' + clean_query + '%'
+            word_boundary_pattern = f'% {clean_query}%'
             
         # Check if database exists
         if not os.path.exists(MESSAGES_DB_PATH):
@@ -442,58 +764,69 @@ def search_contacts(query: str, limit: int = 25, include_groups: bool = False) -
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        # Clean and prepare query
-        clean_query = query.strip().lower()
-        exact_pattern = clean_query
-        starts_with_pattern = clean_query + '%'
-        contains_pattern = '%' + clean_query + '%'
-        word_boundary_pattern = f'% {clean_query}%'
-        
         # Build simplified query with proper scoring
         group_filter = "" if include_groups else "AND jid NOT LIKE '%@g.us'"
         
-        query_sql = f"""
-            SELECT DISTINCT 
-                jid,
-                name,
-                CASE 
-                    WHEN LOWER(name) = ? THEN 100
-                    WHEN LOWER(name) LIKE ? THEN 90
-                    WHEN LOWER(jid) LIKE ? THEN 85
-                    WHEN LOWER(name) LIKE ? THEN 80
-                    WHEN LOWER(name) LIKE ? THEN 70
-                    WHEN LOWER(jid) LIKE ? THEN 60
-                    ELSE 40
-                END as score,
-                CASE WHEN name IS NOT NULL THEN 1 ELSE 0 END as has_name,
-                LENGTH(name) as name_length
-            FROM chats
-            WHERE 
-                (LOWER(name) LIKE ? OR LOWER(jid) LIKE ?)
-                {group_filter}
-                AND name IS NOT NULL
-                AND TRIM(name) != ''
-            ORDER BY 
-                score DESC,
-                has_name DESC,
-                name_length ASC,
-                name COLLATE NOCASE,
-                jid
-            LIMIT ?
-        """
-        
-        # Prepare parameters in correct order
-        params = [
-            exact_pattern,              # Exact match
-            starts_with_pattern,        # Starts with
-            starts_with_pattern,        # Phone starts with  
-            word_boundary_pattern,      # Word boundary
-            contains_pattern,           # Contains anywhere
-            contains_pattern,           # JID contains
-            contains_pattern,           # Main WHERE name
-            contains_pattern,           # Main WHERE jid
-            limit
-        ]
+        if clean_query == "":
+            # For empty queries, return all contacts ordered by name
+            query_sql = f"""
+                SELECT DISTINCT 
+                    jid,
+                    COALESCE(name, SUBSTR(jid, 1, INSTR(jid, '@') - 1)) as display_name,
+                    50 as score,
+                    CASE WHEN name IS NOT NULL AND TRIM(name) != '' THEN 1 ELSE 0 END as has_name,
+                    LENGTH(COALESCE(name, '')) as name_length
+                FROM chats
+                WHERE jid != '0@s.whatsapp.net'
+                    {group_filter}
+                ORDER BY 
+                    has_name DESC,
+                    display_name COLLATE NOCASE,
+                    jid
+                LIMIT ?
+            """
+            params = [limit]
+        else:
+            query_sql = f"""
+                SELECT DISTINCT 
+                    jid,
+                    COALESCE(name, SUBSTR(jid, 1, INSTR(jid, '@') - 1)) as display_name,
+                    CASE 
+                        WHEN LOWER(COALESCE(name, '')) = ? THEN 100
+                        WHEN LOWER(COALESCE(name, '')) LIKE ? THEN 90
+                        WHEN LOWER(jid) LIKE ? THEN 85
+                        WHEN LOWER(COALESCE(name, '')) LIKE ? THEN 80
+                        WHEN LOWER(COALESCE(name, '')) LIKE ? THEN 70
+                        WHEN LOWER(jid) LIKE ? THEN 60
+                        ELSE 40
+                    END as score,
+                    CASE WHEN name IS NOT NULL AND TRIM(name) != '' THEN 1 ELSE 0 END as has_name,
+                    LENGTH(COALESCE(name, '')) as name_length
+                FROM chats
+                WHERE 
+                    (LOWER(COALESCE(name, '')) LIKE ? OR LOWER(jid) LIKE ?)
+                    {group_filter}
+                    AND jid != '0@s.whatsapp.net'
+                ORDER BY 
+                    score DESC,
+                    has_name DESC,
+                    name_length ASC,
+                    display_name COLLATE NOCASE,
+                    jid
+                LIMIT ?
+            """
+            # Prepare parameters in correct order
+            params = [
+                exact_pattern,              # Exact match
+                starts_with_pattern,        # Starts with
+                starts_with_pattern,        # Phone starts with  
+                word_boundary_pattern,      # Word boundary
+                contains_pattern,           # Contains anywhere
+                contains_pattern,           # JID contains
+                contains_pattern,           # Main WHERE name
+                contains_pattern,           # Main WHERE jid
+                limit
+            ]
         
         cursor.execute(query_sql, params)
         contacts = cursor.fetchall()
@@ -503,14 +836,57 @@ def search_contacts(query: str, limit: int = 25, include_groups: bool = False) -
         
         for contact_data in contacts:
             jid = contact_data[0]
+            display_name = contact_data[1]
             if jid not in seen_jids:
                 seen_jids.add(jid)
+                # Extract phone number from JID
+                phone_number = jid.split('@')[0] if '@' in jid else jid
+                # Use name if available, otherwise use phone number
+                contact_name = display_name if display_name and display_name != phone_number else None
+                
                 contact = Contact(
-                    phone_number=jid.split('@')[0],
-                    name=contact_data[1],
+                    phone_number=phone_number,
+                    name=contact_name,
                     jid=jid
                 )
                 result.append(contact)
+        
+        # If no results and query has potential accent issues, try normalized search
+        if not result and len(clean_query) >= 2:
+            normalized_query = normalize(clean_query)
+            if normalized_query != clean_query or True:  # Always try normalized search as fallback
+                # Try search with normalized query on all contacts
+                cursor.execute(f"""
+                    SELECT DISTINCT jid, COALESCE(name, SUBSTR(jid, 1, INSTR(jid, '@') - 1)) as display_name
+                    FROM chats
+                    WHERE jid != '0@s.whatsapp.net'
+                        {group_filter}
+                    ORDER BY 
+                        CASE WHEN name IS NOT NULL AND TRIM(name) != '' THEN 1 ELSE 0 END DESC,
+                        display_name COLLATE NOCASE
+                """)
+                
+                all_contacts = cursor.fetchall()
+                for contact_data in all_contacts:
+                    jid = contact_data[0]
+                    display_name = contact_data[1]
+                    
+                    # Check if normalized name contains normalized query
+                    if display_name and normalize(display_name).find(normalized_query) >= 0:
+                        if jid not in seen_jids:
+                            seen_jids.add(jid)
+                            phone_number = jid.split('@')[0] if '@' in jid else jid
+                            contact_name = display_name if display_name and display_name != phone_number else None
+                            
+                            contact = Contact(
+                                phone_number=phone_number,
+                                name=contact_name,
+                                jid=jid
+                            )
+                            result.append(contact)
+                            
+                            if len(result) >= limit:
+                                break
         
         # If no results and query looks like a phone number, suggest direct JID
         if not result and (clean_query.isdigit() or clean_query.replace('+', '').replace('-', '').replace(' ', '').isdigit()):
@@ -527,59 +903,32 @@ def search_contacts(query: str, limit: int = 25, include_groups: bool = False) -
     finally:
         if 'conn' in locals():
             conn.close()
-def calculate_similarity(s1: str, s2: str) -> float:
-    """Calculate similarity between two strings using Levenshtein distance."""
-    if not s1 or not s2:
-        return 0.0
-    
-    s1, s2 = s1.lower().strip(), s2.lower().strip()
-    
-    if s1 == s2:
-        return 1.0
-    
-    # If one string is contained in the other
-    if s1 in s2 or s2 in s1:
-        return 0.8
-    
-    # Levenshtein distance calculation
-    m, n = len(s1), len(s2)
-    if m == 0:
-        return 0.0
-    if n == 0:
-        return 0.0
-    
-    # Create matrix
-    d = [[0] * (n + 1) for _ in range(m + 1)]
-    
-    # Initialize first row and column
-    for i in range(m + 1):
-        d[i][0] = i
-    for j in range(n + 1):
-        d[0][j] = j
-    
-    # Fill the matrix
-    for i in range(1, m + 1):
-        for j in range(1, n + 1):
-            cost = 0 if s1[i-1] == s2[j-1] else 1
-            d[i][j] = min(
-                d[i-1][j] + 1,      # deletion
-                d[i][j-1] + 1,      # insertion
-                d[i-1][j-1] + cost  # substitution
-            )
-    
-    # Convert distance to similarity (0-1)
-    max_len = max(m, n)
-    similarity = 1 - (d[m][n] / max_len)
-    return similarity
+def search_contacts_fuzzy(contacts, query, limit=5):
+    """
+    Busca contactos usando coincidencias aproximadas.
+    :param contacts: Un diccionario de contactos donde las claves son JIDs y los valores son objetos ContactInfo.
+    :param query: La cadena de búsqueda.
+    :param limit: El número máximo de resultados a devolver.
+    :return: Una lista de tuplas (JID, ContactInfo) para las mejores coincidencias.
+    """
+    normalized_query = normalize(query)
+    contact_names = [(jid, normalize(contact['FullName'])) for jid, contact in contacts.items()]
+    best_matches = process.extract(normalized_query, [name for jid, name in contact_names], limit=limit)
+    results = []
+    for match in best_matches:
+        jid = [jid for j, name in contact_names if name == match[0]][0]
+        if match[1] > 60:  # Umbral de similitud del 60%
+            results.append((jid, contacts[jid]))
+    return results
 
 def smart_search_contacts(query: str, limit: int = 25, include_groups: bool = False, similarity_threshold: float = 0.6) -> List[Contact]:
-    """Advanced contact search with similarity scoring and smart ranking.
+    """Advanced contact search with AI-like similarity matching and typo tolerance.
     
-    This function provides more intelligent search capabilities:
-    - Fuzzy string matching with configurable similarity threshold
-    - Multiple search strategies (exact, partial, phonetic-like)
+    This function provides intelligent search capabilities:
+    - Handles misspellings and typos using similarity algorithms
     - Smart ranking based on multiple factors
-    - Handles common misspellings and variations
+    - Configurable similarity threshold for precision control
+    - Better than basic search for complex names or unclear spelling
     """
     try:
         # Enhanced validation
@@ -595,87 +944,69 @@ def smart_search_contacts(query: str, limit: int = 25, include_groups: bool = Fa
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        clean_query = query.strip().lower()
         group_filter = "" if include_groups else "AND jid NOT LIKE '%@g.us'"
         
-        # Get all potential matches for similarity analysis
+        # Get all contacts for fuzzy matching
         cursor.execute(f"""
             SELECT DISTINCT 
                 jid,
-                name
+                COALESCE(name, SUBSTR(jid, 1, INSTR(jid, '@') - 1)) as display_name
             FROM chats
             WHERE 
-                name IS NOT NULL
-                AND TRIM(name) != ''
+                jid != '0@s.whatsapp.net'
                 {group_filter}
-            ORDER BY name COLLATE NOCASE
+            ORDER BY display_name COLLATE NOCASE
         """)
         
         all_contacts = cursor.fetchall()
         
-        # Calculate similarity scores
-        scored_contacts = []
+        # Prepare data for fuzzywuzzy
+        normalized_query = normalize(query)
+        contact_choices = []
+        contact_map = {}
         
-        for contact_data in all_contacts:
-            jid, name = contact_data
-            if not name:
-                continue
-                
-            # Calculate multiple similarity scores
-            name_similarity = calculate_similarity(clean_query, name)
-            
-            # Check for partial matches
-            partial_score = 0.0
-            if clean_query in name.lower():
-                partial_score = 0.9
-            elif any(word.startswith(clean_query) for word in name.lower().split()):
-                partial_score = 0.8
-            elif any(clean_query in word for word in name.lower().split()):
-                partial_score = 0.7
-            
-            # Check phone number match
-            phone_score = 0.0
-            phone_part = jid.split('@')[0]
-            if clean_query in phone_part:
-                phone_score = 0.85
-            
-            # Combined score
-            final_score = max(name_similarity, partial_score, phone_score)
-            
-            # Apply threshold
-            if final_score >= similarity_threshold:
-                scored_contacts.append((contact_data, final_score, name_similarity, partial_score, phone_score))
+        for jid, display_name in all_contacts:
+            if display_name:
+                normalized_name = normalize(display_name)
+                contact_choices.append(normalized_name)
+                contact_map[normalized_name] = (jid, display_name)
         
-        # Sort by score (descending) and name (ascending for ties)
-        scored_contacts.sort(key=lambda x: (-x[1], x[0][1].lower()))
+        # Use fuzzywuzzy for intelligent matching
+        # Convert similarity_threshold from 0-1 to 0-100 scale for fuzzywuzzy
+        fuzzy_threshold = int(similarity_threshold * 100)
+        best_matches = process.extract(normalized_query, contact_choices, limit=limit)
         
-        # Convert to Contact objects
+        # Build results
         result = []
-        for i, (contact_data, final_score, name_sim, partial_sim, phone_sim) in enumerate(scored_contacts[:limit]):
-            if i < 3:  # Show scoring details for top 3 results
-                print(f"Match: {contact_data[1]} (Score: {final_score:.2f} - Name: {name_sim:.2f}, Partial: {partial_sim:.2f}, Phone: {phone_sim:.2f})")
-            
-            contact = Contact(
-                phone_number=contact_data[0].split('@')[0],
-                name=contact_data[1],
-                jid=contact_data[0]
-            )
-            result.append(contact)
+        for match_name, score in best_matches:
+            if score >= fuzzy_threshold:
+                jid, original_name = contact_map[match_name]
+                phone_number = jid.split('@')[0] if '@' in jid else jid
+                contact_name = original_name if original_name != phone_number else None
+                
+                contact = Contact(
+                    phone_number=phone_number,
+                    name=contact_name,
+                    jid=jid
+                )
+                result.append(contact)
+                
+                # Show match details for debugging
+                if len(result) <= 3:
+                    print(f"Fuzzy match: {original_name} (Score: {score})")
         
         # If no good matches found, fallback to basic search
         if not result:
-            print(f"INFO: No matches above similarity threshold {similarity_threshold}. Trying basic search...")
+            print(f"INFO: No fuzzy matches above threshold {fuzzy_threshold}. Trying basic search...")
             return search_contacts(query, limit, include_groups)
         
         return result
         
     except sqlite3.Error as e:
         print(f"Database error in smart search: {e}")
-        # Fallback to basic search
         return search_contacts(query, limit, include_groups)
     except Exception as e:
         print(f"Unexpected error in smart search: {e}")
-        # Fallback to basic search
         return search_contacts(query, limit, include_groups)
     finally:
         if 'conn' in locals():

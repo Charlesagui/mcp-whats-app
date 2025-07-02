@@ -2,7 +2,9 @@ from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
 from whatsapp import (
     search_contacts as whatsapp_search_contacts,
+    search_contacts_enhanced as whatsapp_search_contacts_enhanced,
     smart_search_contacts as whatsapp_smart_search_contacts,
+    smart_search_contacts_enhanced as whatsapp_smart_search_contacts_enhanced,
     list_messages as whatsapp_list_messages,
     list_chats as whatsapp_list_chats,
     get_chat as whatsapp_get_chat,
@@ -27,8 +29,31 @@ def search_contacts(query: str, limit: int = 25, include_groups: bool = False) -
         limit: Maximum number of results to return (default 25)
         include_groups: Whether to include group chats in results (default False)
     """
+    # Try enhanced search first (using real WhatsApp contact names)
+    try:
+        contacts = whatsapp_search_contacts_enhanced(query, limit, include_groups)
+        if contacts:
+            return [
+                {
+                    "phone_number": contact.phone_number,
+                    "name": contact.name,
+                    "jid": contact.jid
+                }
+                for contact in contacts
+            ]
+    except Exception as e:
+        print(f"Enhanced search failed, falling back to basic search: {e}")
+    
+    # Fallback to basic search
     contacts = whatsapp_search_contacts(query, limit, include_groups)
-    return contacts
+    return [
+        {
+            "phone_number": contact.phone_number,
+            "name": contact.name,
+            "jid": contact.jid
+        }
+        for contact in contacts
+    ]
 
 @mcp.tool()
 def smart_search_contacts(query: str, limit: int = 25, include_groups: bool = False, similarity_threshold: float = 0.6) -> List[Dict[str, Any]]:
@@ -46,8 +71,31 @@ def smart_search_contacts(query: str, limit: int = 25, include_groups: bool = Fa
         include_groups: Whether to include group chats in results (default False)
         similarity_threshold: Minimum similarity score (0.0-1.0, default 0.6)
     """
+    # Try enhanced smart search first (using real WhatsApp contact names)
+    try:
+        contacts = whatsapp_smart_search_contacts_enhanced(query, limit, include_groups, similarity_threshold)
+        if contacts:
+            return [
+                {
+                    "phone_number": contact.phone_number,
+                    "name": contact.name,
+                    "jid": contact.jid
+                }
+                for contact in contacts
+            ]
+    except Exception as e:
+        print(f"Enhanced smart search failed, falling back to basic smart search: {e}")
+    
+    # Fallback to basic smart search
     contacts = whatsapp_smart_search_contacts(query, limit, include_groups, similarity_threshold)
-    return contacts
+    return [
+        {
+            "phone_number": contact.phone_number,
+            "name": contact.name,
+            "jid": contact.jid
+        }
+        for contact in contacts
+    ]
 
 @mcp.tool()
 def list_messages(
