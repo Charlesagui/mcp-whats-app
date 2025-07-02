@@ -4,3 +4,6 @@ main.exe
 
 # Python cache
 __pycache__/
+
+# Backup files
+*.backup

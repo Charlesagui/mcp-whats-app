@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
-from whatsapp import (
+from whatsapp_contacts import (
     search_contacts as whatsapp_search_contacts,
     search_contacts_enhanced as whatsapp_search_contacts_enhanced,
     smart_search_contacts as whatsapp_smart_search_contacts,

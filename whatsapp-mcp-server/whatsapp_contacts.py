@@ -326,3 +326,658 @@ def smart_search_contacts_enhanced(query: str, limit: int = 25, include_groups: 
     """Alias para compatibilidad."""
     return smart_search_contacts(query, limit, include_groups, similarity_threshold)
 
+def get_real_contact_name(jid: str) -> Optional[str]:
+    """Get the real contact name from whatsapp.db"""
+    try:
+        conn = sqlite3.connect(WHATSAPP_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT full_name, first_name, push_name
+            FROM whatsmeow_contacts
+            WHERE their_jid = ?
+            ORDER BY 
+                CASE WHEN full_name IS NOT NULL AND TRIM(full_name) != '' THEN 1 ELSE 0 END DESC,
+                CASE WHEN first_name IS NOT NULL AND TRIM(first_name) != '' THEN 1 ELSE 0 END DESC,
+                CASE WHEN push_name IS NOT NULL AND TRIM(push_name) != '' THEN 1 ELSE 0 END DESC
+            LIMIT 1
+        """, (jid,))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            # Return the first non-empty name in order of preference: full_name, first_name, push_name
+            for name in result:
+                if name and name.strip():
+                    return name.strip()
+        
+        return None
+        
+    except sqlite3.Error as e:
+        print(f"Database error while getting real contact name: {e}")
+        return None
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+# Funciones adicionales de mensajería y utilidades
+
+def get_real_contact_name(jid: str) -> Optional[str]:
+    """Get the real contact name from whatsapp.db"""
+    try:
+        conn = sqlite3.connect(WHATSAPP_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT full_name, first_name, push_name
+            FROM whatsmeow_contacts
+            WHERE their_jid = ?
+            ORDER BY 
+                CASE WHEN full_name IS NOT NULL AND TRIM(full_name) != '' THEN 1 ELSE 0 END DESC,
+                CASE WHEN first_name IS NOT NULL AND TRIM(first_name) != '' THEN 1 ELSE 0 END DESC,
+                CASE WHEN push_name IS NOT NULL AND TRIM(push_name) != '' THEN 1 ELSE 0 END DESC
+            LIMIT 1
+        """, (jid,))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            # Return the first non-empty name in order of preference: full_name, first_name, push_name
+            for name in result:
+                if name and name.strip():
+                    return name.strip()
+        
+        return None
+        
+    except sqlite3.Error as e:
+        print(f"Database error while getting real contact name: {e}")
+        return None
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+def get_sender_name(sender: str) -> str:
+    """Get display name for a sender."""
+    if not sender or sender == "0":
+        return "Unknown"
+    
+    # Try to get real name from WhatsApp DB first
+    sender_jid = sender if "@" in sender else f"{sender}@s.whatsapp.net"
+    real_name = get_real_contact_name(sender_jid)
+    
+    if real_name:
+        return real_name
+    
+    # Fallback to phone number
+    phone = sender.split("@")[0] if "@" in sender else sender
+    return f"Contact ({phone})"
+
+def format_message(message: Message, show_chat_info: bool = True) -> str:
+    """Print a single message with consistent formatting."""
+    output = ""
+    
+    if show_chat_info and message.chat_name:
+        output += f"[{message.timestamp:%Y-%m-%d %H:%M:%S}] Chat: {message.chat_name} "
+    else:
+        output += f"[{message.timestamp:%Y-%m-%d %H:%M:%S}] "
+        
+    content_prefix = ""
+    if hasattr(message, 'media_type') and message.media_type:
+        content_prefix = f"[{message.media_type} - Message ID: {message.id} - Chat JID: {message.chat_jid}] "
+    
+    try:
+        sender_name = get_sender_name(message.sender) if not message.is_from_me else "Me"
+        output += f"From: {sender_name}: {content_prefix}{message.content}\n"
+    except Exception as e:
+        print(f"Error formatting message: {e}")
+    return output
+
+def format_messages_list(messages: List[Message], show_chat_info: bool = True) -> str:
+    """Format a list of messages for display."""
+    output = ""
+    if not messages:
+        output += "No messages to display."
+        return output
+    
+    for message in messages:
+        output += format_message(message, show_chat_info)
+    return output
+
+def list_messages(
+    after: Optional[str] = None,
+    before: Optional[str] = None,
+    sender_phone_number: Optional[str] = None,
+    chat_jid: Optional[str] = None,
+    query: Optional[str] = None,
+    limit: int = 20,
+    page: int = 0,
+    include_context: bool = False,
+    context_before: int = 1,
+    context_after: int = 1,
+    max_results: int = 100,
+    force_load: bool = False
+) -> List[Message]:
+    """Get messages matching the specified criteria with optional context."""
+    try:
+        # Check if at least one filter is specified or load is forced
+        if not any([after, before, sender_phone_number, chat_jid, query, force_load]):
+            print("WARNING: No filters specified and force_load=False. No messages will be loaded.")
+            return []
+        
+        # Quick connection test - if DB doesn't exist, return empty
+        if not os.path.exists(MESSAGES_DB_PATH):
+            print(f"WARNING: Database not found at {MESSAGES_DB_PATH}")
+            return []
+        
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Build base query with optimized indexes
+        query_parts = ["SELECT messages.timestamp, messages.sender, chats.name, messages.content, messages.is_from_me, chats.jid, messages.id, messages.media_type FROM messages"]
+        query_parts.append("JOIN chats ON messages.chat_jid = chats.jid")
+        where_clauses = []
+        params = []
+        
+        # Add filters with proper indexing
+        if after:
+            try:
+                after_date = datetime.fromisoformat(after) if isinstance(after, str) else after
+            except ValueError:
+                raise ValueError(f"Invalid date format for 'after': {after}. Please use ISO-8601 format.")
+            
+            where_clauses.append("messages.timestamp > ?")
+            params.append(after_date)
+
+        if before:
+            try:
+                before_date = datetime.fromisoformat(before) if isinstance(before, str) else before
+            except ValueError:
+                raise ValueError(f"Invalid date format for 'before': {before}. Please use ISO-8601 format.")
+            
+            where_clauses.append("messages.timestamp < ?")
+            params.append(before_date)
+
+        if sender_phone_number:
+            where_clauses.append("messages.sender = ?")
+            params.append(sender_phone_number)
+            
+        if chat_jid:
+            where_clauses.append("messages.chat_jid = ?")
+            params.append(chat_jid)
+            
+        if query:
+            where_clauses.append("LOWER(messages.content) LIKE LOWER(?)")
+            params.append(f"%{query}%")
+            
+        if where_clauses:
+            query_parts.append("WHERE " + " AND ".join(where_clauses))
+            
+        # Add pagination with stricter limits for performance
+        offset = page * limit
+        actual_limit = min(limit, max_results, 50)  # Hard cap at 50 for performance
+        query_parts.append("ORDER BY messages.timestamp DESC")
+        query_parts.append("LIMIT ? OFFSET ?")
+        params.extend([actual_limit, offset])
+        
+        cursor.execute(" ".join(query_parts), tuple(params))
+        messages = cursor.fetchall()
+        
+        # Convert to Message objects
+        result = []
+        for msg in messages:
+            timestamp, sender, chat_name, content, is_from_me, chat_jid, msg_id, media_type = msg
+            
+            # Parse timestamp - handle both string and datetime
+            if isinstance(timestamp, str):
+                try:
+                    timestamp = datetime.fromisoformat(timestamp)
+                except ValueError:
+                    timestamp = datetime.now()
+            
+            message_obj = Message(
+                timestamp=timestamp,
+                sender=sender,
+                content=content,
+                is_from_me=bool(is_from_me),
+                chat_jid=chat_jid,
+                id=msg_id,
+                chat_name=chat_name,
+                media_type=media_type
+            )
+            result.append(message_obj)
+        
+        conn.close()
+        return result
+        
+    except Exception as e:
+        print(f"Error in list_messages: {e}")
+        return []
+
+def get_message_context(message_id: str, before: int = 5, after: int = 5) -> Optional[MessageContext]:
+    """Get context around a specific message."""
+    try:
+        if not os.path.exists(MESSAGES_DB_PATH):
+            print(f"WARNING: Database not found at {MESSAGES_DB_PATH}")
+            return None
+        
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+        
+        # First, find the target message
+        cursor.execute("""
+            SELECT messages.timestamp, messages.sender, chats.name, messages.content, 
+                   messages.is_from_me, chats.jid, messages.id, messages.media_type
+            FROM messages
+            JOIN chats ON messages.chat_jid = chats.jid
+            WHERE messages.id = ?
+        """, (message_id,))
+        
+        target_result = cursor.fetchone()
+        if not target_result:
+            conn.close()
+            return None
+        
+        # Create target message object
+        timestamp, sender, chat_name, content, is_from_me, chat_jid, msg_id, media_type = target_result
+        if isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp)
+        
+        target_message = Message(
+            timestamp=timestamp,
+            sender=sender,
+            content=content,
+            is_from_me=bool(is_from_me),
+            chat_jid=chat_jid,
+            id=msg_id,
+            chat_name=chat_name,
+            media_type=media_type
+        )
+        
+        # Get messages before
+        cursor.execute("""
+            SELECT messages.timestamp, messages.sender, chats.name, messages.content,
+                   messages.is_from_me, chats.jid, messages.id, messages.media_type
+            FROM messages
+            JOIN chats ON messages.chat_jid = chats.jid
+            WHERE messages.chat_jid = ? AND messages.timestamp < ?
+            ORDER BY messages.timestamp DESC
+            LIMIT ?
+        """, (chat_jid, timestamp, before))
+        
+        before_messages = []
+        for msg in cursor.fetchall():
+            ts, sender, chat_name, content, is_from_me, chat_jid, msg_id, media_type = msg
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts)
+            
+            before_messages.append(Message(
+                timestamp=ts,
+                sender=sender,
+                content=content,
+                is_from_me=bool(is_from_me),
+                chat_jid=chat_jid,
+                id=msg_id,
+                chat_name=chat_name,
+                media_type=media_type
+            ))
+        
+        before_messages.reverse()  # Reverse to get chronological order
+        
+        # Get messages after
+        cursor.execute("""
+            SELECT messages.timestamp, messages.sender, chats.name, messages.content,
+                   messages.is_from_me, chats.jid, messages.id, messages.media_type
+            FROM messages
+            JOIN chats ON messages.chat_jid = chats.jid
+            WHERE messages.chat_jid = ? AND messages.timestamp > ?
+            ORDER BY messages.timestamp ASC
+            LIMIT ?
+        """, (chat_jid, timestamp, after))
+        
+        after_messages = []
+        for msg in cursor.fetchall():
+            ts, sender, chat_name, content, is_from_me, chat_jid, msg_id, media_type = msg
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts)
+            
+            after_messages.append(Message(
+                timestamp=ts,
+                sender=sender,
+                content=content,
+                is_from_me=bool(is_from_me),
+                chat_jid=chat_jid,
+                id=msg_id,
+                chat_name=chat_name,
+                media_type=media_type
+            ))
+        
+        conn.close()
+        
+        return MessageContext(
+            message=target_message,
+            before=before_messages,
+            after=after_messages
+        )
+        
+    except Exception as e:
+        print(f"Error in get_message_context: {e}")
+        return None
+
+def send_message(recipient: str, message: str) -> Tuple[bool, str]:
+    """Send a WhatsApp message to a person or group."""
+    try:
+        # Validate input
+        if not recipient:
+            return False, "Recipient must be provided"
+        
+        url = f"{WHATSAPP_API_BASE_URL}/send"
+        payload = {
+            "recipient": recipient,
+            "message": message,
+        }
+        
+        response = requests.post(url, json=payload)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            result = response.json()
+            return result.get("success", False), result.get("message", "Unknown response")
+        else:
+            return False, f"Error: HTTP {response.status_code} - {response.text}"
+            
+    except requests.RequestException as e:
+        return False, f"Request error: {str(e)}"
+    except json.JSONDecodeError:
+        return False, f"Error parsing response: {response.text}"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
+
+def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
+    """Send a file via WhatsApp."""
+    try:
+        # Validate input
+        if not recipient:
+            return False, "Recipient must be provided"
+        
+        if not media_path:
+            return False, "Media path must be provided"
+        
+        if not os.path.isfile(media_path):
+            return False, f"Media file not found: {media_path}"
+        
+        url = f"{WHATSAPP_API_BASE_URL}/send"
+        payload = {
+            "recipient": recipient,
+            "media_path": media_path
+        }
+        
+        response = requests.post(url, json=payload)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            result = response.json()
+            return result.get("success", False), result.get("message", "Unknown response")
+        else:
+            return False, f"Error: HTTP {response.status_code} - {response.text}"
+            
+    except requests.RequestException as e:
+        return False, f"Request error: {str(e)}"
+    except json.JSONDecodeError:
+        return False, f"Error parsing response: {response.text}"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
+
+def send_audio_message(recipient: str, media_path: str) -> Tuple[bool, str]:
+    """Send an audio file as a WhatsApp audio message."""
+    try:
+        # Validate input
+        if not recipient:
+            return False, "Recipient must be provided"
+        
+        if not media_path:
+            return False, "Media path must be provided"
+        
+        if not os.path.isfile(media_path):
+            return False, f"Media file not found: {media_path}"
+
+        if not media_path.endswith(".ogg"):
+            try:
+                media_path = audio.convert_to_opus_ogg_temp(media_path)
+            except Exception as e:
+                return False, f"Error converting file to opus ogg. You likely need to install ffmpeg: {str(e)}"
+        
+        url = f"{WHATSAPP_API_BASE_URL}/send"
+        payload = {
+            "recipient": recipient,
+            "media_path": media_path
+        }
+        
+        response = requests.post(url, json=payload)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            result = response.json()
+            return result.get("success", False), result.get("message", "Unknown response")
+        else:
+            return False, f"Error: HTTP {response.status_code} - {response.text}"
+            
+    except requests.RequestException as e:
+        return False, f"Request error: {str(e)}"
+    except json.JSONDecodeError:
+        return False, f"Error parsing response: {response.text}"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
+
+def download_media(message_id: str, chat_jid: str) -> Optional[str]:
+    """Download media from a message and return the local file path."""
+    try:
+        url = f"{WHATSAPP_API_BASE_URL}/download"
+        payload = {
+            "message_id": message_id,
+            "chat_jid": chat_jid
+        }
+        
+        response = requests.post(url, json=payload)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("success", False):
+                path = result.get("path")
+                print(f"Media downloaded successfully: {path}")
+                return path
+            else:
+                print(f"Download failed: {result.get('message', 'Unknown error')}")
+                return None
+        else:
+            print(f"Error: HTTP {response.status_code} - {response.text}")
+            return None
+            
+    except requests.RequestException as e:
+        print(f"Request error: {str(e)}")
+        return None
+    except json.JSONDecodeError:
+        print(f"Error parsing response: {response.text}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        return None
+
+def list_chats(
+    query: Optional[str] = None,
+    limit: int = 20,
+    page: int = 0,
+    include_last_message: bool = True,
+    sort_by: str = "last_active"
+) -> List[Chat]:
+    """Get chats matching the specified criteria."""
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Build base query
+        query_parts = ["""
+            SELECT 
+                chats.jid,
+                chats.name,
+                chats.last_message_time,
+                messages.content as last_message,
+                messages.sender as last_sender,
+                messages.is_from_me as last_is_from_me
+            FROM chats
+        """]
+        
+        if include_last_message:
+            query_parts.append("""
+                LEFT JOIN messages ON chats.jid = messages.chat_jid 
+                AND chats.last_message_time = messages.timestamp
+            """)
+            
+        where_clauses = []
+        params = []
+        
+        if query:
+            where_clauses.append("(LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?)")
+            params.extend([f"%{query}%", f"%{query}%"])
+            
+        if where_clauses:
+            query_parts.append("WHERE " + " AND ".join(where_clauses))
+            
+        # Add sorting
+        order_by = "chats.last_message_time DESC" if sort_by == "last_active" else "chats.name"
+        query_parts.append(f"ORDER BY {order_by}")
+        
+        # Add pagination
+        offset = page * limit
+        query_parts.append("LIMIT ? OFFSET ?")
+        params.extend([limit, offset])
+        
+        cursor.execute(" ".join(query_parts), tuple(params))
+        chats = cursor.fetchall()
+        
+        # Convert to Chat objects
+        result = []
+        for chat_data in chats:
+            jid, name, last_message_time, last_message, last_sender, last_is_from_me = chat_data
+            
+            # Parse timestamp
+            if isinstance(last_message_time, str):
+                try:
+                    last_message_time = datetime.fromisoformat(last_message_time)
+                except ValueError:
+                    last_message_time = None
+            
+            chat = Chat(
+                jid=jid,
+                name=name,
+                last_message_time=last_message_time,
+                last_message=last_message,
+                last_sender=last_sender,
+                last_is_from_me=bool(last_is_from_me) if last_is_from_me is not None else None
+            )
+            result.append(chat)
+        
+        conn.close()
+        return result
+        
+    except Exception as e:
+        print(f"Error in list_chats: {e}")
+        return []
+
+def get_chat(jid: str) -> Optional[Chat]:
+    """Get a specific chat by JID."""
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                chats.jid,
+                chats.name,
+                chats.last_message_time,
+                messages.content as last_message,
+                messages.sender as last_sender,
+                messages.is_from_me as last_is_from_me
+            FROM chats
+            LEFT JOIN messages ON chats.jid = messages.chat_jid 
+                AND chats.last_message_time = messages.timestamp
+            WHERE chats.jid = ?
+        """, (jid,))
+        
+        result = cursor.fetchone()
+        if not result:
+            conn.close()
+            return None
+        
+        jid, name, last_message_time, last_message, last_sender, last_is_from_me = result
+        
+        # Parse timestamp
+        if isinstance(last_message_time, str):
+            try:
+                last_message_time = datetime.fromisoformat(last_message_time)
+            except ValueError:
+                last_message_time = None
+        
+        chat = Chat(
+            jid=jid,
+            name=name,
+            last_message_time=last_message_time,
+            last_message=last_message,
+            last_sender=last_sender,
+            last_is_from_me=bool(last_is_from_me) if last_is_from_me is not None else None
+        )
+        
+        conn.close()
+        return chat
+        
+    except Exception as e:
+        print(f"Error in get_chat: {e}")
+        return None
+
+def get_direct_chat_by_contact(phone_number: str) -> Optional[Chat]:
+    """Get the direct chat with a specific contact by phone number."""
+    # Construct JID from phone number
+    jid = f"{phone_number}@s.whatsapp.net"
+    return get_chat(jid)
+
+def get_contact_chats(phone_number: str) -> List[Chat]:
+    """Get all chats (including groups) where a contact participates."""
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Find chats where the contact has sent messages
+        cursor.execute("""
+            SELECT DISTINCT 
+                chats.jid,
+                chats.name,
+                chats.last_message_time
+            FROM chats
+            JOIN messages ON chats.jid = messages.chat_jid
+            WHERE messages.sender = ? OR chats.jid = ?
+            ORDER BY chats.last_message_time DESC
+        """, (phone_number, f"{phone_number}@s.whatsapp.net"))
+        
+        results = cursor.fetchall()
+        chats = []
+        
+        for jid, name, last_message_time in results:
+            # Parse timestamp
+            if isinstance(last_message_time, str):
+                try:
+                    last_message_time = datetime.fromisoformat(last_message_time)
+                except ValueError:
+                    last_message_time = None
+            
+            chat = Chat(
+                jid=jid,
+                name=name,
+                last_message_time=last_message_time
+            )
+            chats.append(chat)
+        
+        conn.close()
+        return chats
+        
+    except Exception as e:
+        print(f"Error in get_contact_chats: {e}")
+        return []
