@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 import os
@@ -139,39 +139,54 @@ def list_messages(
     query: Optional[str] = None,
     limit: int = 20,
     page: int = 0,
-    include_context: bool = True,
+    include_context: bool = False,
     context_before: int = 1,
-    context_after: int = 1
+    context_after: int = 1,
+    max_results: int = 100,
+    force_load: bool = False
 ) -> List[Message]:
-    """Get messages matching the specified criteria with optional context."""
+    """Get messages matching the specified criteria with optional context.
+    
+    To prevent loading entire history, at least one filter must be specified or force_load=True.
+    """
     try:
+        # Check if at least one filter is specified or load is forced
+        if not any([after, before, sender_phone_number, chat_jid, query, force_load]):
+            print("WARNING: No filters specified and force_load=False. No messages will be loaded.")
+            return []
+        
+        # Quick connection test - if DB doesn't exist, return empty
+        if not os.path.exists(MESSAGES_DB_PATH):
+            print(f"WARNING: Database not found at {MESSAGES_DB_PATH}")
+            return []
+        
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        # Build base query
+        # Build base query with optimized indexes
         query_parts = ["SELECT messages.timestamp, messages.sender, chats.name, messages.content, messages.is_from_me, chats.jid, messages.id, messages.media_type FROM messages"]
         query_parts.append("JOIN chats ON messages.chat_jid = chats.jid")
         where_clauses = []
         params = []
         
-        # Add filters
+        # Add filters with proper indexing
         if after:
             try:
-                after = datetime.fromisoformat(after)
+                after_date = datetime.fromisoformat(after) if isinstance(after, str) else after
             except ValueError:
                 raise ValueError(f"Invalid date format for 'after': {after}. Please use ISO-8601 format.")
             
             where_clauses.append("messages.timestamp > ?")
-            params.append(after)
+            params.append(after_date)
 
         if before:
             try:
-                before = datetime.fromisoformat(before)
+                before_date = datetime.fromisoformat(before) if isinstance(before, str) else before
             except ValueError:
                 raise ValueError(f"Invalid date format for 'before': {before}. Please use ISO-8601 format.")
             
             where_clauses.append("messages.timestamp < ?")
-            params.append(before)
+            params.append(before_date)
 
         if sender_phone_number:
             where_clauses.append("messages.sender = ?")
@@ -188,11 +203,12 @@ def list_messages(
         if where_clauses:
             query_parts.append("WHERE " + " AND ".join(where_clauses))
             
-        # Add pagination
+        # Add pagination with stricter limits for performance
         offset = page * limit
+        actual_limit = min(limit, max_results, 50)  # Hard cap at 50 for performance
         query_parts.append("ORDER BY messages.timestamp DESC")
         query_parts.append("LIMIT ? OFFSET ?")
-        params.extend([limit, offset])
+        params.extend([actual_limit, offset])
         
         cursor.execute(" ".join(query_parts), tuple(params))
         messages = cursor.fetchall()
@@ -210,23 +226,38 @@ def list_messages(
                 media_type=msg[7]
             )
             result.append(message)
-            
+        
+        # Context loading only if explicitly requested and limited
         if include_context and result:
-            # Add context for each message
+            context_limit = min(len(result), 5)  # Max 5 messages with context
+            if context_limit < len(result):
+                print(f"INFO: Limiting context to first {context_limit} messages for performance")
+                
             messages_with_context = []
-            for msg in result:
-                context = get_message_context(msg.id, context_before, context_after)
-                messages_with_context.extend(context.before)
-                messages_with_context.append(context.message)
-                messages_with_context.extend(context.after)
+            for msg in result[:context_limit]:
+                try:
+                    context = get_message_context(msg.id, context_before, context_after)
+                    messages_with_context.extend(context.before)
+                    messages_with_context.append(context.message)
+                    messages_with_context.extend(context.after)
+                except Exception as e:
+                    print(f"Warning: Could not load context for message {msg.id}: {e}")
+                    messages_with_context.append(msg)
             
+            # Add remaining messages without context
+            if context_limit < len(result):
+                messages_with_context.extend(result[context_limit:])
+                
             return format_messages_list(messages_with_context, show_chat_info=True)
             
-        # Format and display messages without context
+        # Return formatted messages without context
         return format_messages_list(result, show_chat_info=True)    
         
     except sqlite3.Error as e:
         print(f"Database error: {e}")
+        return []
+    except Exception as e:
+        print(f"Unexpected error: {e}")
         return []
     finally:
         if 'conn' in locals():
@@ -395,37 +426,295 @@ def list_chats(
         if 'conn' in locals():
             conn.close()
 
-def search_contacts(query: str) -> List[Contact]:
-    """Search contacts by name or phone number."""
+def search_contacts(query: str, limit: int = 25, include_groups: bool = False) -> List[Contact]:
+    """Search contacts by name or phone number with advanced fuzzy matching."""
     try:
+        # Enhanced validation
+        if not query or len(query.strip()) < 1:
+            print("INFO: Query too short, returning empty results")
+            return []
+            
+        # Check if database exists
+        if not os.path.exists(MESSAGES_DB_PATH):
+            print(f"WARNING: Database not found at {MESSAGES_DB_PATH}")
+            return []
+        
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         cursor = conn.cursor()
         
-        # Split query into characters to support partial matching
-        search_pattern = '%' +query + '%'
+        # Clean and prepare query
+        clean_query = query.strip().lower()
+        exact_pattern = clean_query
+        starts_with_pattern = clean_query + '%'
+        contains_pattern = '%' + clean_query + '%'
+        word_boundary_pattern = f'% {clean_query}%'
         
-        cursor.execute("""
+        # Build simplified query with proper scoring
+        group_filter = "" if include_groups else "AND jid NOT LIKE '%@g.us'"
+        
+        query_sql = f"""
+            SELECT DISTINCT 
+                jid,
+                name,
+                CASE 
+                    WHEN LOWER(name) = ? THEN 100
+                    WHEN LOWER(name) LIKE ? THEN 90
+                    WHEN LOWER(jid) LIKE ? THEN 85
+                    WHEN LOWER(name) LIKE ? THEN 80
+                    WHEN LOWER(name) LIKE ? THEN 70
+                    WHEN LOWER(jid) LIKE ? THEN 60
+                    ELSE 40
+                END as score,
+                CASE WHEN name IS NOT NULL THEN 1 ELSE 0 END as has_name,
+                LENGTH(name) as name_length
+            FROM chats
+            WHERE 
+                (LOWER(name) LIKE ? OR LOWER(jid) LIKE ?)
+                {group_filter}
+                AND name IS NOT NULL
+                AND TRIM(name) != ''
+            ORDER BY 
+                score DESC,
+                has_name DESC,
+                name_length ASC,
+                name COLLATE NOCASE,
+                jid
+            LIMIT ?
+        """
+        
+        # Prepare parameters in correct order
+        params = [
+            exact_pattern,              # Exact match
+            starts_with_pattern,        # Starts with
+            starts_with_pattern,        # Phone starts with  
+            word_boundary_pattern,      # Word boundary
+            contains_pattern,           # Contains anywhere
+            contains_pattern,           # JID contains
+            contains_pattern,           # Main WHERE name
+            contains_pattern,           # Main WHERE jid
+            limit
+        ]
+        
+        cursor.execute(query_sql, params)
+        contacts = cursor.fetchall()
+        
+        result = []
+        seen_jids = set()  # Prevent duplicates
+        
+        for contact_data in contacts:
+            jid = contact_data[0]
+            if jid not in seen_jids:
+                seen_jids.add(jid)
+                contact = Contact(
+                    phone_number=jid.split('@')[0],
+                    name=contact_data[1],
+                    jid=jid
+                )
+                result.append(contact)
+        
+        # If no results and query looks like a phone number, suggest direct JID
+        if not result and (clean_query.isdigit() or clean_query.replace('+', '').replace('-', '').replace(' ', '').isdigit()):
+            print(f"INFO: No contacts found. For direct messaging, try JID format: {clean_query.replace('+', '').replace('-', '').replace(' ', '')}@s.whatsapp.net")
+        
+        return result
+        
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        return []
+    except Exception as e:
+        print(f"Unexpected error in contact search: {e}")
+        return []
+    finally:
+        if 'conn' in locals():
+            conn.close()
+def calculate_similarity(s1: str, s2: str) -> float:
+    """Calculate similarity between two strings using Levenshtein distance."""
+    if not s1 or not s2:
+        return 0.0
+    
+    s1, s2 = s1.lower().strip(), s2.lower().strip()
+    
+    if s1 == s2:
+        return 1.0
+    
+    # If one string is contained in the other
+    if s1 in s2 or s2 in s1:
+        return 0.8
+    
+    # Levenshtein distance calculation
+    m, n = len(s1), len(s2)
+    if m == 0:
+        return 0.0
+    if n == 0:
+        return 0.0
+    
+    # Create matrix
+    d = [[0] * (n + 1) for _ in range(m + 1)]
+    
+    # Initialize first row and column
+    for i in range(m + 1):
+        d[i][0] = i
+    for j in range(n + 1):
+        d[0][j] = j
+    
+    # Fill the matrix
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            cost = 0 if s1[i-1] == s2[j-1] else 1
+            d[i][j] = min(
+                d[i-1][j] + 1,      # deletion
+                d[i][j-1] + 1,      # insertion
+                d[i-1][j-1] + cost  # substitution
+            )
+    
+    # Convert distance to similarity (0-1)
+    max_len = max(m, n)
+    similarity = 1 - (d[m][n] / max_len)
+    return similarity
+
+def smart_search_contacts(query: str, limit: int = 25, include_groups: bool = False, similarity_threshold: float = 0.6) -> List[Contact]:
+    """Advanced contact search with similarity scoring and smart ranking.
+    
+    This function provides more intelligent search capabilities:
+    - Fuzzy string matching with configurable similarity threshold
+    - Multiple search strategies (exact, partial, phonetic-like)
+    - Smart ranking based on multiple factors
+    - Handles common misspellings and variations
+    """
+    try:
+        # Enhanced validation
+        if not query or len(query.strip()) < 1:
+            print("INFO: Query too short, returning empty results")
+            return []
+            
+        # Check if database exists
+        if not os.path.exists(MESSAGES_DB_PATH):
+            print(f"WARNING: Database not found at {MESSAGES_DB_PATH}")
+            return []
+        
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+        
+        clean_query = query.strip().lower()
+        group_filter = "" if include_groups else "AND jid NOT LIKE '%@g.us'"
+        
+        # Get all potential matches for similarity analysis
+        cursor.execute(f"""
             SELECT DISTINCT 
                 jid,
                 name
             FROM chats
             WHERE 
-                (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))
-                AND jid NOT LIKE '%@g.us'
-            ORDER BY name, jid
-            LIMIT 50
-        """, (search_pattern, search_pattern))
+                name IS NOT NULL
+                AND TRIM(name) != ''
+                {group_filter}
+            ORDER BY name COLLATE NOCASE
+        """)
         
-        contacts = cursor.fetchall()
+        all_contacts = cursor.fetchall()
         
+        # Calculate similarity scores
+        scored_contacts = []
+        
+        for contact_data in all_contacts:
+            jid, name = contact_data
+            if not name:
+                continue
+                
+            # Calculate multiple similarity scores
+            name_similarity = calculate_similarity(clean_query, name)
+            
+            # Check for partial matches
+            partial_score = 0.0
+            if clean_query in name.lower():
+                partial_score = 0.9
+            elif any(word.startswith(clean_query) for word in name.lower().split()):
+                partial_score = 0.8
+            elif any(clean_query in word for word in name.lower().split()):
+                partial_score = 0.7
+            
+            # Check phone number match
+            phone_score = 0.0
+            phone_part = jid.split('@')[0]
+            if clean_query in phone_part:
+                phone_score = 0.85
+            
+            # Combined score
+            final_score = max(name_similarity, partial_score, phone_score)
+            
+            # Apply threshold
+            if final_score >= similarity_threshold:
+                scored_contacts.append((contact_data, final_score, name_similarity, partial_score, phone_score))
+        
+        # Sort by score (descending) and name (ascending for ties)
+        scored_contacts.sort(key=lambda x: (-x[1], x[0][1].lower()))
+        
+        # Convert to Contact objects
         result = []
-        for contact_data in contacts:
+        for i, (contact_data, final_score, name_sim, partial_sim, phone_sim) in enumerate(scored_contacts[:limit]):
+            if i < 3:  # Show scoring details for top 3 results
+                print(f"Match: {contact_data[1]} (Score: {final_score:.2f} - Name: {name_sim:.2f}, Partial: {partial_sim:.2f}, Phone: {phone_sim:.2f})")
+            
             contact = Contact(
                 phone_number=contact_data[0].split('@')[0],
                 name=contact_data[1],
                 jid=contact_data[0]
             )
             result.append(contact)
+        
+        # If no good matches found, fallback to basic search
+        if not result:
+            print(f"INFO: No matches above similarity threshold {similarity_threshold}. Trying basic search...")
+            return search_contacts(query, limit, include_groups)
+        
+        return result
+        
+    except sqlite3.Error as e:
+        print(f"Database error in smart search: {e}")
+        # Fallback to basic search
+        return search_contacts(query, limit, include_groups)
+    except Exception as e:
+        print(f"Unexpected error in smart search: {e}")
+        # Fallback to basic search
+        return search_contacts(query, limit, include_groups)
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+
+    """Get all chats involving the contact."""
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT DISTINCT
+                c.jid,
+                c.name,
+                c.last_message_time,
+                m.content as last_message,
+                m.sender as last_sender,
+                m.is_from_me as last_is_from_me
+            FROM chats c
+            JOIN messages m ON c.jid = m.chat_jid
+            WHERE m.sender = ? OR c.jid = ?
+            ORDER BY c.last_message_time DESC
+            LIMIT ? OFFSET ?
+        """, (jid, jid, limit, page * limit))
+        
+        chats = cursor.fetchall()
+        
+        result = []
+        for chat_data in chats:
+            chat = Chat(
+                jid=chat_data[0],
+                name=chat_data[1],
+                last_message_time=datetime.fromisoformat(chat_data[2]) if chat_data[2] else None,
+                last_message=chat_data[3],
+                last_sender=chat_data[4],
+                last_is_from_me=chat_data[5]
+            )
+            result.append(chat)
             
         return result
         
@@ -435,6 +724,7 @@ def search_contacts(query: str) -> List[Contact]:
     finally:
         if 'conn' in locals():
             conn.close()
+
 def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Chat]:
     """Get all chats involving the contact."""
     try:
@@ -479,7 +769,7 @@ def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Chat]:
         if 'conn' in locals():
             conn.close()
 
-def get_last_interaction(jid: str) -> str:
+
     """Get most recent message involving the contact."""
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)

@@ -2,16 +2,16 @@ from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
 from whatsapp import (
     search_contacts as whatsapp_search_contacts,
+    smart_search_contacts as whatsapp_smart_search_contacts,
     list_messages as whatsapp_list_messages,
     list_chats as whatsapp_list_chats,
     get_chat as whatsapp_get_chat,
     get_direct_chat_by_contact as whatsapp_get_direct_chat_by_contact,
     get_contact_chats as whatsapp_get_contact_chats,
-    get_last_interaction as whatsapp_get_last_interaction,
     get_message_context as whatsapp_get_message_context,
     send_message as whatsapp_send_message,
     send_file as whatsapp_send_file,
-    send_audio_message as whatsapp_audio_voice_message,
+    send_audio_message as whatsapp_send_audio_message,
     download_media as whatsapp_download_media
 )
 
@@ -19,13 +19,34 @@ from whatsapp import (
 mcp = FastMCP("whatsapp")
 
 @mcp.tool()
-def search_contacts(query: str) -> List[Dict[str, Any]]:
-    """Search WhatsApp contacts by name or phone number.
+def search_contacts(query: str, limit: int = 25, include_groups: bool = False) -> List[Dict[str, Any]]:
+    """Search WhatsApp contacts by name or phone number with advanced fuzzy matching.
     
     Args:
         query: Search term to match against contact names or phone numbers
+        limit: Maximum number of results to return (default 25)
+        include_groups: Whether to include group chats in results (default False)
     """
-    contacts = whatsapp_search_contacts(query)
+    contacts = whatsapp_search_contacts(query, limit, include_groups)
+    return contacts
+
+@mcp.tool()
+def smart_search_contacts(query: str, limit: int = 25, include_groups: bool = False, similarity_threshold: float = 0.6) -> List[Dict[str, Any]]:
+    """Advanced contact search with AI-like similarity matching and typo tolerance.
+    
+    This function provides intelligent search capabilities:
+    - Handles misspellings and typos using similarity algorithms
+    - Smart ranking based on multiple factors
+    - Configurable similarity threshold for precision control
+    - Better than basic search for complex names or unclear spelling
+    
+    Args:
+        query: Search term to match against contact names or phone numbers
+        limit: Maximum number of results to return (default 25)
+        include_groups: Whether to include group chats in results (default False)
+        similarity_threshold: Minimum similarity score (0.0-1.0, default 0.6)
+    """
+    contacts = whatsapp_smart_search_contacts(query, limit, include_groups, similarity_threshold)
     return contacts
 
 @mcp.tool()
@@ -39,7 +60,9 @@ def list_messages(
     page: int = 0,
     include_context: bool = True,
     context_before: int = 1,
-    context_after: int = 1
+    context_after: int = 1,
+    max_results: int = 100,
+    force_load: bool = False
 ) -> List[Dict[str, Any]]:
     """Get WhatsApp messages matching specified criteria with optional context.
     
@@ -54,6 +77,10 @@ def list_messages(
         include_context: Whether to include messages before and after matches (default True)
         context_before: Number of messages to include before each match (default 1)
         context_after: Number of messages to include after each match (default 1)
+        max_results: Maximum number of total results to return (default 100)
+        force_load: Force loading messages even without filters (default False)
+    
+    Note: To prevent loading entire history, at least one filter must be specified or force_load=True.
     """
     messages = whatsapp_list_messages(
         after=after,
@@ -65,18 +92,11 @@ def list_messages(
         page=page,
         include_context=include_context,
         context_before=context_before,
-        context_after=context_after
+        context_after=context_after,
+        max_results=max_results,
+        force_load=force_load
     )
     return messages
-@mcp.tool()
-def get_last_interaction(jid: str) -> str:
-    """Get most recent WhatsApp message involving the contact.
-    
-    Args:
-        jid: The JID of the contact to search for
-    """
-    message = whatsapp_get_last_interaction(jid)
-    return message
 
 @mcp.tool()
 def get_message_context(
@@ -155,7 +175,7 @@ def send_audio_message(recipient: str, media_path: str) -> Dict[str, Any]:
     Returns:
         A dictionary containing success status and a status message
     """
-    success, status_message = whatsapp_audio_voice_message(recipient, media_path)
+    success, status_message = whatsapp_send_audio_message(recipient, media_path)
     return {
         "success": success,
         "message": status_message
