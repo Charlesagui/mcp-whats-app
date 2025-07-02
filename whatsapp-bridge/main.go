@@ -243,6 +243,8 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		return false, "Not connected to WhatsApp"
 	}
 
+	fmt.Printf("DEBUG: Attempting to send message to recipient: %s\n", recipient)
+
 	// Create JID for recipient
 	var recipientJID types.JID
 	var err error
@@ -251,17 +253,21 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 	isJID := strings.Contains(recipient, "@")
 
 	if isJID {
+		fmt.Printf("DEBUG: Recipient appears to be a JID: %s\n", recipient)
 		// Parse the JID string
 		recipientJID, err = types.ParseJID(recipient)
 		if err != nil {
 			return false, fmt.Sprintf("Error parsing JID: %v", err)
 		}
+		fmt.Printf("DEBUG: Parsed JID - User: %s, Server: %s\n", recipientJID.User, recipientJID.Server)
 	} else {
+		fmt.Printf("DEBUG: Recipient appears to be a phone number: %s\n", recipient)
 		// Create JID from phone number
 		recipientJID = types.JID{
 			User:   recipient,
 			Server: "s.whatsapp.net", // For personal chats
 		}
+		fmt.Printf("DEBUG: Created JID - User: %s, Server: %s\n", recipientJID.User, recipientJID.Server)
 	}
 
 	msg := &waProto.Message{}
@@ -396,13 +402,17 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		msg.Conversation = proto.String(message)
 	}
 
+	fmt.Printf("DEBUG: About to send message to JID: %s (Server: %s)\n", recipientJID.String(), recipientJID.Server)
+
 	// Send message
 	_, err = client.SendMessage(context.Background(), recipientJID, msg)
 
 	if err != nil {
+		fmt.Printf("DEBUG: SendMessage failed with error: %v\n", err)
 		return false, fmt.Sprintf("Error sending message: %v", err)
 	}
 
+	fmt.Printf("DEBUG: Message sent successfully to %s\n", recipient)
 	return true, fmt.Sprintf("Message sent to %s", recipient)
 }
 // Extract media info from a message
@@ -673,7 +683,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	}
 
 	// Download the media using whatsmeow client
-	mediaData, err := client.Download(downloader)
+	mediaData, err := client.Download(context.Background(), downloader)
 	if err != nil {
 		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
 	}
@@ -833,14 +843,14 @@ func main() {
 		return
 	}
 
-	container, err := sqlstore.New("sqlite3", fmt.Sprintf("file:store/%s?_foreign_keys=on", WHATSAPP_DB_NAME), dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:store/%s?_foreign_keys=on", WHATSAPP_DB_NAME), dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
 		return
 	}
 
 	// Get device store - This contains session information
-	deviceStore, err := container.GetFirstDevice()
+	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No device exists, create one
@@ -1020,7 +1030,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 		logger.Infof("Getting name for contact: %s", chatJID)
 
 		// Just use contact info (full name)
-		contact, err := client.Store.Contacts.GetContact(jid)
+		contact, err := client.Store.Contacts.GetContact(context.Background(), jid)
 		if err == nil && contact.FullName != "" {
 			name = contact.FullName
 		} else if sender != "" {
